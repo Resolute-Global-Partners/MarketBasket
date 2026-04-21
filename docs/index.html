@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Basket Summary</title>
+  <link rel="stylesheet" href="style.css">
+
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/styles/ag-grid.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/styles/ag-theme-quartz.css">
+</head>
+<body>
+
+<header>
+  <h1>Market Basket Summary</h1>
+  <div class="top-stats">
+    <span class="ts"><em>State</em><b id="ts-state">—</b></span>
+    <span class="ts"><em>Total quotes</em><b id="ts-quotes">—</b></span>
+    <span class="ts"><em>Month spread</em><b id="ts-months">—</b></span>
+    <span class="ts"><em>Companies</em><b id="ts-cos">—</b></span>
+  </div>
+</header>
+
+<section class="controls">
+  <!-- Row 1 -->
+  <div class="filter-row">
+    <div class="control">
+      <label for="state">State</label>
+      <select id="state"></select>
+    </div>
+    <div class="control">
+      <label for="date-from">Start Date</label>
+      <select id="date-from"></select>
+    </div>
+    <div class="control">
+      <label for="date-to">End Date</label>
+      <select id="date-to"></select>
+    </div>
+    <div class="control">
+      <label for="term">Term</label>
+      <select id="term"></select>
+    </div>
+    <div class="control">
+      <label for="market-provider">Market Provider</label>
+      <select id="market-provider">
+        <option value="ITC">ITC</option>
+        <option value="EZ Lynx">EZ Lynx</option>
+        <option value="Any">Any</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Row 2 -->
+  <div class="filter-row">
+    <div class="control">
+      <label for="prem-min">Min Written Premium</label>
+      <select id="prem-min"></select>
+    </div>
+    <div class="control">
+      <label for="prem-max">Max Written Premium</label>
+      <select id="prem-max"></select>
+    </div>
+    <div class="control">
+      <label for="liab">Liab Limits</label>
+      <select id="liab"></select>
+    </div>
+    <div class="control">
+      <label for="payplan">Pay Plan</label>
+      <select id="payplan"></select>
+    </div>
+  </div>
+
+  <!-- Row 3 -->
+  <div class="filter-row">
+    <div class="control">
+      <label for="non-owner">Non Owner</label>
+      <select id="non-owner"></select>
+    </div>
+    <div class="control">
+      <label for="num-drivers">Num Drivers</label>
+      <select id="num-drivers"></select>
+    </div>
+    <div class="control">
+      <label for="num-vehicles">Num Vehicles</label>
+      <select id="num-vehicles"></select>
+    </div>
+    <div class="control">
+      <label for="prior-insurance">Prior Insurance</label>
+      <select id="prior-insurance"></select>
+    </div>
+    <div class="control">
+      <label for="year-bin">Vehicle Year</label>
+      <select id="year-bin"></select>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="reset">Reset filters</button>
+    <button id="download">Download CSV</button>
+    <span class="status" id="status">Initializing…</span>
+  </div>
+</section>
+
+<main>
+  <div id="grid" class="ag-theme-quartz"></div>
+</main>
+
+<footer>
+  <span id="generated-at"></span>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/dist/ag-grid-community.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

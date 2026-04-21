@@ -77,7 +77,7 @@ uv run refresh --missing --dry-run
 ### Preview the site locally
 
 ```bash
-cd site && python -m http.server 8000
+cd docs && python -m http.server 8000
 # open http://localhost:8000
 ```
 

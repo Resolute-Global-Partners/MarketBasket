@@ -29,7 +29,7 @@ from .config import COMPANY_MAP_BY_STATE, COMPARISON_COMPANY_BY_STATE, GROUP_COL
 from .preprocess import apply_top_n_on_aggregated
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = ROOT / "site" / "data"
+DATA_DIR = ROOT / "docs" / "data"
 
 DUMP_ROOT = Path("C:/Temp/PNCDataDump/MarketUnified")
 RATE_DIR = DUMP_ROOT / "fact_Rate"

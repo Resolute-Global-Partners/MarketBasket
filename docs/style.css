@@ -1,0 +1,211 @@
+/* Market Basket — Excel-like */
+
+* { box-sizing: border-box; }
+
+:root {
+  --fg: #1a1a1a;
+  --muted: #64748b;
+  --border: #d9d9d9;
+  --bg: #f3f5f8;
+  --accent: #1f3864;
+  --accent-2: #2563eb;
+  --highlight: #fffcd6;
+  --good: #15803d;
+  --bad: #b91c1c;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+/* ─── Top bar with title + stats ────────────────────────────────────────── */
+
+header {
+  padding: 12px 20px;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+header h1 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.top-stats {
+  margin-left: auto;
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.top-stats .ts {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.15;
+}
+.top-stats em {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  opacity: 0.7;
+}
+.top-stats b {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Filter rows ───────────────────────────────────────────────────────── */
+
+.controls {
+  background: white;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 160px;
+  flex: 0 1 auto;
+}
+.control label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.control select {
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: white;
+  width: 100%;
+  font-family: inherit;
+  color: var(--fg);
+  cursor: pointer;
+}
+.control select:focus {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.18);
+}
+.control select:hover { border-color: #94a3b8; }
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 2px;
+}
+.actions button {
+  padding: 7px 14px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
+  font-family: inherit;
+}
+.actions button:hover { background: #f1f5f9; border-color: #94a3b8; }
+.actions #download {
+  background: var(--accent-2);
+  color: white;
+  border-color: var(--accent-2);
+}
+.actions #download:hover { background: #1d4ed8; }
+.actions .status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ─── Grid ──────────────────────────────────────────────────────────────── */
+
+main {
+  padding: 14px 20px 20px;
+}
+#grid {
+  width: 100%;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ag-theme-quartz {
+  --ag-header-background-color: #1f3864;
+  --ag-header-foreground-color: #ffffff;
+  --ag-font-size: 13px;
+  --ag-header-height: 54px;
+  --ag-row-height: 34px;
+  --ag-odd-row-background-color: #fafbfc;
+  --ag-border-color: #e2e8f0;
+}
+.ag-theme-quartz .ag-header-cell-label {
+  font-weight: 600;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.2;
+}
+.ag-theme-quartz .ag-header-cell-text { white-space: normal; text-align: center; }
+
+/* Center every cell by default (numericColumn type otherwise right-aligns) */
+.ag-theme-quartz .ag-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+/* Program column (pinned left) stays left-aligned */
+.ag-theme-quartz .ag-pinned-left-cols-container .ag-cell {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* ENTIRE reference row yellow */
+.ag-row.row-reference,
+.ag-row.row-reference.ag-row-odd { background-color: var(--highlight) !important; }
+.ag-row.row-reference:hover,
+.ag-row.row-reference.ag-row-odd:hover { background-color: #fde68a !important; }
+
+/* TOTAL row */
+.ag-row.row-total,
+.ag-row.row-total.ag-row-odd {
+  font-weight: 700 !important;
+  background: #e8eef7 !important;
+  border-top: 2px solid var(--accent) !important;
+}
+
+.cell-pos { color: var(--good); font-weight: 600; }
+.cell-neg { color: var(--bad); font-weight: 600; }
+
+footer {
+  text-align: right;
+  padding: 6px 20px 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
