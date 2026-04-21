@@ -10,6 +10,8 @@ returns a narrower one ready for merging.
 """
 from __future__ import annotations
 
+import re as _re
+
 import pandas as pd
 
 from .config import (
@@ -167,23 +169,26 @@ def apply_top_n_on_aggregated(
     For curated states keep top-5 unmapped; for non-curated, top-N defined by
     TOP_N_NON_CURATED.
     """
-    unmapped_mask = df["CompanyName"].str.match(r"^\d+$")
+    # Rows that are raw numeric IDs (never bucketed yet).
+    numeric_mask = df["CompanyName"].str.match(r"^\d+$")
+    # Rows that were already bucketed in a prior run (e.g. after a partial merge).
+    preother_mask = df["CompanyName"].str.match(r"^Other \(N=\d+\)$")
+    unmapped_mask = numeric_mask | preother_mask
+
     if not unmapped_mask.any():
         return df
 
     if state in EXHAUSTIVE_MAP_STATES:
-        # Bucket ALL unmapped into a single "Other" — only curated companies
-        # are shown individually.
         n_keep = 0
     elif state in COMPANY_MAP_BY_STATE:
-        # Non-exhaustive curated (e.g. AZ): keep top-5 unmapped visible.
         n_keep = 5
     else:
-        # No curated map: keep top-N visible.
         n_keep = TOP_N_NON_CURATED
 
+    # Only numeric IDs compete for top-N slots; pre-bucketed Other rows always
+    # collapse back into the Other bucket.
     top = (
-        df.loc[unmapped_mask]
+        df.loc[numeric_mask]
           .groupby("CompanyName")["Quotes"]
           .sum()
           .sort_values(ascending=False)
@@ -192,7 +197,16 @@ def apply_top_n_on_aggregated(
     )
 
     is_other = unmapped_mask & ~df["CompanyName"].isin(top)
-    n_other = df.loc[is_other, "CompanyName"].nunique()
+    # N = fresh numeric IDs being bucketed + N values extracted from any
+    # pre-existing "Other (N=X)" labels (they represent companies we can no
+    # longer enumerate individually after a prior bucketing pass).
+    n_numeric = int(df.loc[is_other & numeric_mask, "CompanyName"].nunique())
+    n_preexisting = sum(
+        int(m.group(1))
+        for name in df.loc[is_other & preother_mask, "CompanyName"].unique()
+        for m in [_re.match(r"^Other \(N=(\d+)\)$", name)] if m
+    )
+    n_other = n_numeric + n_preexisting
     df = df.copy()
     df.loc[is_other, "CompanyName"] = f"Other (N={n_other})"
 

@@ -25,6 +25,7 @@ const LIAB_ORDER = ["25/50", "50/100", "100/300"];
 const app = {
   db: null, conn: null, index: null,
   currentState: null, grid: null,
+  lastRows: null, lastTotalRow: null,
 };
 
 init().catch(err => {
@@ -319,6 +320,8 @@ async function refreshAll() {
   app.grid.setGridOption("rowData", rows);
   app.grid.setGridOption("pinnedBottomRowData", totalRow ? [totalRow] : []);
 
+  app.lastRows = rows;
+  app.lastTotalRow = totalRow;
   updateTopStats(entry, total, rows.length);
 }
 
@@ -479,9 +482,39 @@ function wireControls() {
   });
 
   document.getElementById("download").addEventListener("click", () => {
-    if (app.grid) app.grid.exportDataAsCsv({
-      fileName: `MarketBasket_${app.currentState}.csv`,
-    });
+    if (!app.lastRows || !app.currentState) return;
+    const state = app.currentState;
+    const entry = app.index.states[state];
+
+    const exportCols = [
+      { field: "CompanyName",        header: "Program" },
+      { field: "Quotes",             header: "Quotes" },
+      { field: "SizePct",            header: "Size (%)" },
+      { field: "AvgPremium",         header: "Avg Written Premium" },
+      { field: "WrittenRank",        header: "Written Rank" },
+      { field: "BridgingCount",      header: "Bridging Count" },
+      { field: "BridgeRate",         header: "Bridge Rate" },
+      { field: "AvgBridgingPremium", header: "Avg Bridging Premium" },
+      { field: "BridgeRank",         header: "Bridge Rank" },
+      { field: "RankDiff",           header: "Rank Diff" },
+    ];
+    if (entry.comparison_company)
+      exportCols.push({ field: "VsCompareCo", header: `vs ${entry.comparison_company}` });
+    if (entry.companies.includes("SIC"))
+      exportCols.push({ field: "VsSIC", header: "vs SIC" });
+
+    const allRows = [...app.lastRows];
+    if (app.lastTotalRow) allRows.push(app.lastTotalRow);
+
+    const wsData = [exportCols.map(c => c.header)];
+    for (const row of allRows) {
+      wsData.push(exportCols.map(c => row[c.field] ?? ""));
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, state);
+    XLSX.writeFile(wb, `MarketBasket_${state}.xlsx`);
   });
 }
 
