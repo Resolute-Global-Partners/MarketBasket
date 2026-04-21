@@ -1,0 +1,21 @@
+[project]
+name = "marketbasket"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "dataloader",
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "pyarrow>=23.0.1",
+]
+
+[project.scripts]
+refresh = "marketbasket.refresh:main"
+refresh-local = "marketbasket.refresh_local:main"
+
+[build-system]
+requires = ["uv_build>=0.9.5,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+dataloader = { path = "../DataLoader", editable = true }
