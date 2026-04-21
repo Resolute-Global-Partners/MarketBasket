@@ -32,7 +32,7 @@
         "Kemper",
         "Mendota",
         "NatGen",
-        "Other (N=46)",
+        "Other",
         "Progressive",
         "SIC",
         "Safeway",
@@ -77,7 +77,7 @@
         "GEICO",
         "Kemper",
         "National",
-        "Other (N=119)",
+        "Other",
         "Progressive",
         "SIC",
         "Safeway",
@@ -116,7 +116,7 @@
         "95161375",
         "9575331",
         "95817409",
-        "Other (N=56)"
+        "Other"
       ],
       "curated": false,
       "comparison_company": null
@@ -149,7 +149,7 @@
         "8915981",
         "95162058",
         "95819139",
-        "Other (N=31)"
+        "Other"
       ],
       "curated": false,
       "comparison_company": null
@@ -182,8 +182,7 @@
         "8914786",
         "95160659",
         "95162047",
-        "Other (N=112)",
-        "Other (N=271)"
+        "Other"
       ],
       "curated": false,
       "comparison_company": null

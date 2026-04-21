@@ -10,8 +10,6 @@ returns a narrower one ready for merging.
 """
 from __future__ import annotations
 
-import re as _re
-
 import pandas as pd
 
 from .config import (
@@ -169,10 +167,8 @@ def apply_top_n_on_aggregated(
     For curated states keep top-5 unmapped; for non-curated, top-N defined by
     TOP_N_NON_CURATED.
     """
-    # Rows that are raw numeric IDs (never bucketed yet).
     numeric_mask = df["CompanyName"].str.match(r"^\d+$")
-    # Rows that were already bucketed in a prior run (e.g. after a partial merge).
-    preother_mask = df["CompanyName"].str.match(r"^Other \(N=\d+\)$")
+    preother_mask = df["CompanyName"].str.match(r"^Other$")
     unmapped_mask = numeric_mask | preother_mask
 
     if not unmapped_mask.any():
@@ -200,15 +196,8 @@ def apply_top_n_on_aggregated(
     # N = fresh numeric IDs being bucketed + N values extracted from any
     # pre-existing "Other (N=X)" labels (they represent companies we can no
     # longer enumerate individually after a prior bucketing pass).
-    n_numeric = int(df.loc[is_other & numeric_mask, "CompanyName"].nunique())
-    n_preexisting = sum(
-        int(m.group(1))
-        for name in df.loc[is_other & preother_mask, "CompanyName"].unique()
-        for m in [_re.match(r"^Other \(N=(\d+)\)$", name)] if m
-    )
-    n_other = n_numeric + n_preexisting
     df = df.copy()
-    df.loc[is_other, "CompanyName"] = f"Other (N={n_other})"
+    df.loc[is_other, "CompanyName"] = "Other"
 
     # Re-group to merge the now-identically-named Other rows into one per
     # (YYYYMM, group_cols) combination.
