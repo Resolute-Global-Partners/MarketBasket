@@ -115,7 +115,7 @@ MarketBasket/
 
 | State | Behaviour |
 |---|---|
-| **IL** | 19-ID curated map -> 13 named companies. All unmapped `CompanyId`s collapsed into a single `Other (N=X)` row. Reference columns: vs UIC + vs SIC. |
+| **IL** | 19-ID curated map -> 13 named companies. All unmapped `CompanyId`s collapsed into a single `Other` row. Reference columns: vs UIC + vs SIC. |
 | **AZ** | 16-ID curated map -> ~14 named. Top-5 unmapped kept by ID, rest collapsed to `Other`. Reference: vs SunCoast + vs SIC. |
 | **Other states** (IN, TN, TX ...) | No curated map. Top-15 `CompanyId`s by distinct-policy count shown as-is (numeric names); rest collapsed to `Other`. No comparison columns. |
 
