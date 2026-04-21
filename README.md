@@ -4,29 +4,34 @@ Web frontend that displays the same interactive quote/bridging tables as the
 Excel version, but fed straight from **PRD-SQL-02 → parquet → static site**.
 End users open a link and never touch SQL or the VPN.
 
+**Live site:** https://resolute-global-partners.github.io/MarketBasket/
+
+**Current data:** IL (23 mo), AZ (8 mo), IN (7 mo), TN (7 mo), TX (7 mo)
+
 ## Architecture
 
 ```
-┌─ monthly, on YOUR machine (needs VPN) ─────────────────────────┐
-│                                                                 │
-│   uv run refresh --missing                                      │
-│     │   queries MarketUnified.fact_Rate + _Car/_Driver/_Violation│
-│     │   aggregates to 10-dim group-by using your Excel logic    │
-│     ▼                                                           │
-│   site/data/<STATE>.parquet  +  site/data/index.json            │
-│                                                                 │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │  git add + commit + push
-                               ▼
-┌─ GitHub Pages (public repo) ────────────────────────────────────┐
-│   site/index.html + app.js + parquets                           │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │  URL
-                               ▼
-┌─ User (any device, no VPN) ─────────────────────────────────────┐
-│   loads page → picks state → parquet cached in browser          │
-│   all filters run through DuckDB-WASM in-browser (ms-level)     │
-└─────────────────────────────────────────────────────────────────┘
++- monthly, on YOUR machine (needs VPN) ---------------------------------+
+|                                                                        |
+|   uv run refresh --missing                                             |
+|     |   queries MarketUnified.fact_Rate + _Car/_Driver/_Violation      |
+|     |   aggregates to 10-dim group-by using your Excel logic           |
+|     v                                                                  |
+|   docs/data/<STATE>.parquet  +  docs/data/index.json                  |
+|                                                                        |
++-------------------------------------+---------------------------------+
+                                      |  git add + commit + push
+                                      v
++- GitHub Pages (public repo) ----------------------------------------+
+|   https://resolute-global-partners.github.io/MarketBasket/           |
+|   Served from /docs branch: main                                      |
++-------------------------------------+--------------------------------+
+                                      |  URL
+                                      v
++- User (any device, no VPN) -----------------------------------------+
+|   loads page -> picks state -> parquet cached in browser             |
+|   all filters run through DuckDB-WASM in-browser (ms-level)          |
++---------------------------------------------------------------------+
 ```
 
 ## Monthly refresh — the one workflow you'll actually use
@@ -36,12 +41,12 @@ Connect to the VPN, then:
 ```bash
 cd C:/Users/dchemaly/Documents/MarketBasket
 uv run refresh --missing        # pulls only months not already on disk
-git add site/data && git commit -m "data $(date +%Y-%m)" && git push
+git add docs/data && git commit -m "data $(date +%Y-%m)" && git push
 ```
 
 `--missing` is the magic flag: it calls `TABLESAMPLE` on `fact_Rate` to
 discover every (state, month) combo in SQL, compares that list to what's
-already in `site/data/*.parquet`, and pulls only the diff. If MarketUnified
+already in `docs/data/*.parquet`, and pulls only the diff. If MarketUnified
 got a new month of data, it pulls that one. If a new state showed up, it
 pulls all of it.
 
@@ -77,7 +82,7 @@ uv run refresh --missing --dry-run
 ### Preview the site locally
 
 ```bash
-cd docs && python -m http.server 8000
+cd C:/Users/dchemaly/Documents/MarketBasket/docs && python -m http.server 8000
 # open http://localhost:8000
 ```
 
@@ -87,66 +92,54 @@ DuckDB-WASM won't read `file://` URLs, so a static server is required.
 
 ```
 MarketBasket/
-├── pyproject.toml
-├── src/marketbasket/
-│   ├── config.py             # Company maps + pay-plan labels + bins
-│   ├── preprocess.py         # Row-level prep (ported from WSL data.py)
-│   ├── aggregate.py          # Merge + groupby per (state, month)
-│   ├── sql.py                # MarketUnified queries + TABLESAMPLE discovery
-│   ├── refresh.py            # Main CLI — `uv run refresh`
-│   └── refresh_local.py      # Alternative CLI that reads local parquet dumps
-│                             # (used when SQL is unavailable; `uv run refresh-local`)
-└── site/                     # GitHub Pages serves this folder
-    ├── index.html            # Filters + grid shell
-    ├── app.js                # DuckDB-WASM + AG-Grid logic
-    ├── style.css
-    └── data/                 # Generated by refresh (committed to repo)
-        ├── index.json        # State registry + metadata
-        ├── IL.parquet
-        └── ...
++-- pyproject.toml
++-- src/marketbasket/
+|   +-- config.py             # Company maps + pay-plan labels + bins
+|   +-- preprocess.py         # Row-level prep (ported from WSL data.py)
+|   +-- aggregate.py          # Merge + groupby per (state, month)
+|   +-- sql.py                # MarketUnified queries + TABLESAMPLE discovery
+|   +-- refresh.py            # Main CLI -- `uv run refresh`
+|   +-- refresh_local.py      # Alternative CLI that reads local parquet dumps
+|                             # (used when SQL is unavailable; `uv run refresh-local`)
++-- docs/                     # GitHub Pages serves this folder (branch: main, /docs)
+    +-- index.html            # Filters + grid shell
+    +-- app.js                # DuckDB-WASM + AG-Grid logic
+    +-- style.css
+    +-- data/                 # Generated by refresh (committed to repo)
+        +-- index.json        # State registry + metadata
+        +-- IL.parquet
+        +-- ...
 ```
 
 ## Curation rules (matching the Excel behaviour)
 
 | State | Behaviour |
 |---|---|
-| **IL** | 19-ID curated map → 13 named companies. All unmapped `CompanyId`s collapsed into a single `Other (N=X)` row. Reference columns: vs UIC + vs SIC. |
-| **AZ** | 16-ID curated map → ~14 named. Top-5 unmapped kept by ID, rest collapsed to `Other`. Reference: vs SunCoast + vs SIC. |
-| **Other states** (IN, TN, TX …) | No curated map. Top-15 `CompanyId`s by distinct-policy count shown as-is (numeric names); rest collapsed to `Other`. No comparison columns. |
+| **IL** | 19-ID curated map -> 13 named companies. All unmapped `CompanyId`s collapsed into a single `Other (N=X)` row. Reference columns: vs UIC + vs SIC. |
+| **AZ** | 16-ID curated map -> ~14 named. Top-5 unmapped kept by ID, rest collapsed to `Other`. Reference: vs SunCoast + vs SIC. |
+| **Other states** (IN, TN, TX ...) | No curated map. Top-15 `CompanyId`s by distinct-policy count shown as-is (numeric names); rest collapsed to `Other`. No comparison columns. |
 
-Add a new curated state by editing `src/marketbasket/config.py`
-(`COMPANY_MAP_BY_STATE`, `COMPARISON_COMPANY_BY_STATE`, optionally
-`EXHAUSTIVE_MAP_STATES`) and re-running `uv run refresh --state <X> --all-months`.
+### Adding a new curated state
+
+1. Edit `src/marketbasket/config.py`:
+   - Add entry to `COMPANY_MAP_BY_STATE` (CompanyId -> display name)
+   - Add entry to `COMPARISON_COMPANY_BY_STATE` (state -> reference company name)
+   - Optionally add to `EXHAUSTIVE_MAP_STATES` if ALL unmapped IDs should collapse to one Other row (like IL)
+2. Run `uv run refresh --state <X> --all-months`
+3. `git add docs/data && git commit -m "add <X>" && git push`
 
 ## Market Provider filter
 
 The site has an ITC / EZ Lynx / Any dropdown. Currently all SQL data is from
 ITC, so the filter is cosmetic: ITC and Any pass through, EZ Lynx shows
-empty. When EZ Lynx data starts landing in `MarketUnified.fact_Rate.Rate_Source`,
-add `RateSource` to `GROUP_COLS` in `config.py`, pull `Rate_Source` in
-`sql.py`, and re-run `uv run refresh --all`. The frontend already uses
-`app.hasRateSource` detection — the filter will activate automatically.
+empty. When EZ Lynx data starts landing in `MarketUnified.fact_Rate.Rate_Source`:
 
-## Deploying to GitHub Pages
+1. Add `RateSource` to `GROUP_COLS` in `config.py`
+2. Pull `Rate_Source` in `sql.py`
+3. Run `uv run refresh --all`
 
-First time only:
-
-```bash
-cd C:/Users/dchemaly/Documents/MarketBasket
-git init && git add -A && git commit -m "initial"
-# Create Resolute-Global-Partners/MarketBasket as a PUBLIC repo on GitHub
-git remote add origin https://github.com/Resolute-Global-Partners/MarketBasket.git
-git branch -M main
-git push -u origin main
-```
-
-Then in the GitHub repo → Settings → Pages:
-- Source: *Deploy from a branch*
-- Branch: `main`, folder: `/site`
-
-The URL will be `https://resolute-global-partners.github.io/MarketBasket/`.
-The repo is public because Pages on private repos requires GitHub Enterprise
-(not Team). Data is non-sensitive so this is fine.
+The frontend already uses `app.hasRateSource` detection — the filter will
+activate automatically once the column is present in the parquets.
 
 ## Troubleshooting
 
@@ -158,8 +151,8 @@ SQL Server reads ~100 GB from disk into its buffer pool. Once warm, queries
 on the same table complete in 2-5 min (mostly VPN transfer). Don't run two
 refreshes concurrently — they'll fight for the same cache.
 
-**Site loads but the grid is empty** — open DevTools → Console. The usual
-culprit is a path mismatch: the server has to be rooted at the `site/`
+**Site loads but the grid is empty** — open DevTools -> Console. The usual
+culprit is a path mismatch: the server has to be rooted at the `docs/`
 directory so `fetch("data/index.json")` resolves.
 
 **Browser seems to show stale data after refresh** — hard-refresh
