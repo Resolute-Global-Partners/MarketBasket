@@ -30,13 +30,17 @@ RATE_COLS = [
 
 CAR_COLS = [
     "RateLinkID", "RateVehicleId",
-    "LiabLimits1", "LiabLimits2", "Year",
+    "LiabLimits1", "LiabLimits2", "Year", "County",
     "LiabBIPremium", "LiabPDPremium", "CompPremium", "CollPremium",
     "MedPayPremium", "UIMBIPremium", "UIMPDPremium",
     "UninsBIPremium", "UninsPDPremium",
 ]
 
-DRV_COLS = ["RateLinkID", "RateDriverId", "PriorInsurance"]
+DRV_COLS = [
+    "RateLinkID", "RateDriverId", "PriorInsurance",
+    "Age", "Relation", "ResidencyStatus",
+    "PriorMonthsCovg", "PriorDaysLapse",
+]
 VIOL_COLS = ["RateDriverLinkId", "AtFault"]
 
 

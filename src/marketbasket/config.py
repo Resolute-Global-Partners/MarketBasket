@@ -66,8 +66,21 @@ COMPARISON_COMPANY_BY_STATE: dict[str, str] = {
     "AZ": "SunCoast",
 }
 
+# Companies "we represent" — the yellow-highlighted reference rows in the
+# frontend. Discount Simulator inputs only adjust premiums for these companies.
+OUR_COMPANIES_BY_STATE: dict[str, list[str]] = {
+    "IL": ["UIC", "SIC"],
+    "AZ": ["SunCoast", "SIC"],
+}
+
+# Active states — only these get refreshed and shown in the frontend.
+ACTIVE_STATES: set[str] = {"IL", "AZ"}
+
 # For non-curated states: how many top companies to display by distinct policy count.
 TOP_N_NON_CURATED = 15
+
+# Top-N counties (per state) kept individually; the rest collapse to "Other".
+TOP_N_COUNTIES = 10
 
 
 # ── PercentDown normalization ──────────────────────────────────────────────────
@@ -137,10 +150,70 @@ YEAR_BINS = [0, 2009, 2014, 2019, 9999]
 YEAR_LABELS = ["pre-2010", "2010-2014", "2015-2019", "2020+"]
 
 
+# ── Predicted Credit equation (Illinois) ───────────────────────────────────────
+#
+# Mirrors the Excel formula. Used as a placeholder for AZ until we get
+# AZ-specific coefficients. States not in CREDIT_FORMULA_STATES → CreditBin=NaN.
+
+CREDIT_FORMULA_STATES: set[str] = {"IL", "AZ"}
+
+CREDIT_BASE_SCORE = 865
+
+# Prior coverage duration (months) → pts. NO PC (no prior insurance) is treated
+# as 0 duration, which falls into the 0-5 bucket.
+def credit_prior_duration_pts(months: float) -> int:
+    if months <= 5: return -50
+    if months <= 12: return 0
+    return 70
+
+# Vehicle minimum age (years from RatedDate) → pts.
+def credit_vehicle_min_age_pts(min_age: float) -> int:
+    if min_age < 3: return 110
+    if min_age <= 9: return 35
+    return -40
+
+# Prior carrier / lapse status — three mutually exclusive states.
+CREDIT_CARRIER_STATE_NO_PC = "NO_PC"        # PriorInsurance=0
+CREDIT_CARRIER_STATE_NO_LAPSE = "NO_LAPSE"  # PriorInsurance=1, PriorDaysLapse=0
+CREDIT_CARRIER_STATE_LAPSE = "LAPSE"        # PriorInsurance=1, PriorDaysLapse>0
+
+CREDIT_CARRIER_PTS: dict[str, int] = {
+    CREDIT_CARRIER_STATE_NO_PC:    0,
+    CREDIT_CARRIER_STATE_NO_LAPSE: 121,
+    CREDIT_CARRIER_STATE_LAPSE:    -81,
+}
+
+# Named-insured age × carrier-state matrix (pts).
+# Bands: (min_age, max_age) inclusive. Ages outside any band → 0 pts.
+CREDIT_AGE_BANDS: list[tuple[int, int, dict[str, int]]] = [
+    (18, 35,  {"NO_PC": -15, "NO_LAPSE": -15, "LAPSE": -40}),
+    (36, 45,  {"NO_PC":   0, "NO_LAPSE":  10, "LAPSE": -40}),
+    (46, 55,  {"NO_PC":  25, "NO_LAPSE":  40, "LAPSE": -40}),
+    (56, 65,  {"NO_PC":  65, "NO_LAPSE":  85, "LAPSE": -10}),
+    (66, 70,  {"NO_PC": 100, "NO_LAPSE": 120, "LAPSE":  30}),
+    (71, 100, {"NO_PC":   0, "NO_LAPSE":   0, "LAPSE":   0}),
+]
+
+CREDIT_BI_LIMITS_PTS: dict[str, int] = {
+    "25/50":   0,
+    "50/100":  100,
+    "100/300": 200,
+}
+
+# Vehicle count → pts. Cap at 5 (NumVehicles="5+" uses the 5 row).
+CREDIT_VEHCOUNT_PTS: dict[str, int] = {
+    "1": 27, "2": 54, "3": 81, "4": 108, "5+": 135,
+}
+
+CREDIT_HOMEOWNER_PTS = 100   # ResidencyStatus = 'O' → +100; else 0
+
+CREDIT_BIN_SIZE = 50         # 50-pt buckets, e.g. 700, 750, 800...
+
+
 # ── Group-by dimensions (MUST match the frontend filter UI) ────────────────────
 
 GROUP_COLS: list[str] = [
     "CompanyName", "PremBin", "LiabLimits", "PayPlan",
-    "NonOwner", "NumDrivers", "NumVehicles",
-    "PriorInsurance", "YearBin", "Term",
+    "NonOwner", "NumDrivers", "NumVehicles", "County",
+    "PriorInsurance", "YearBin", "Term", "CreditBin",
 ]

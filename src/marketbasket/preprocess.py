@@ -18,6 +18,7 @@ from .config import (
     PERCENT_DOWN_REMAP,
     PREM_COLS,
     TOP_14_PLANS,
+    TOP_N_COUNTIES,
     TOP_N_NON_CURATED,
     VALID_LIAB,
 )
@@ -26,9 +27,14 @@ from .config import (
 def preprocess_driver(df_driver: pd.DataFrame, df_violation: pd.DataFrame) -> pd.DataFrame:
     """fact_Rate_Driver + fact_Rate_Violation → one row per RateLinkID.
 
-    PriorInsurance = 1 if any driver had prior insurance.
-    AtFault        = 1 if any driver had any at-fault violation.
-    NumDrivers     = count of drivers on the rate.
+    Aggregations (all drivers on the rate):
+      PriorInsurance — 1 if any driver had prior insurance.
+      AtFault        — 1 if any driver had any at-fault violation.
+      NumDrivers     — count of drivers on the rate.
+
+    Named-insured columns (Relation='I' row, fall back to first driver):
+      NamedInsuredAge, ResidencyStatus, PriorMonthsCovg, PriorDaysLapse.
+    Used by the Predicted Credit equation downstream.
     """
     viol = (
         df_violation.groupby("RateDriverLinkId")["AtFault"]
@@ -40,7 +46,7 @@ def preprocess_driver(df_driver: pd.DataFrame, df_violation: pd.DataFrame) -> pd
     df = df_driver.merge(viol, on="RateDriverId", how="left")
     df["AtFault"] = df["AtFault"].fillna(0).astype(int)
 
-    return (
+    agg = (
         df.groupby("RateLinkID")
           .agg(
               PriorInsurance=("PriorInsurance", "any"),
@@ -48,8 +54,23 @@ def preprocess_driver(df_driver: pd.DataFrame, df_violation: pd.DataFrame) -> pd
               NumDrivers=("RateDriverId", "count"),
           )
           .reset_index()
-          .rename(columns={"RateLinkID": "RateId"})
           .assign(PriorInsurance=lambda x: x["PriorInsurance"].astype(int))
+    )
+
+    # Named-insured row: Relation='I' if present, otherwise the first driver
+    # per RateLinkID. _is_ni=0 sorts before 1 so 'I' rows win.
+    df = df.assign(_is_ni=(df["Relation"] != "I").astype(int))
+    df = df.sort_values(["RateLinkID", "_is_ni", "RateDriverId"])
+    ni = (
+        df.drop_duplicates("RateLinkID", keep="first")
+          [["RateLinkID", "Age", "ResidencyStatus",
+            "PriorMonthsCovg", "PriorDaysLapse"]]
+          .rename(columns={"Age": "NamedInsuredAge"})
+    )
+
+    return (
+        agg.merge(ni, on="RateLinkID", how="left")
+           .rename(columns={"RateLinkID": "RateId"})
     )
 
 
@@ -57,7 +78,12 @@ def preprocess_car(df: pd.DataFrame) -> pd.DataFrame:
     """fact_Rate_Car → one row per RateLinkID.
 
     1. Drop RateLinkIDs where ANY car has an invalid LiabLimits (not in {25/50, 50/100, 100/300}).
-    2. Aggregate: LiabLimits (first), NumVehicles (count), Year (max), coverage premiums (sum).
+    2. Normalize County: strip whitespace, uppercase. Empty/null → "UNKNOWN".
+    3. Aggregate: LiabLimits/County (first car), NumVehicles, Year (max),
+       coverage premiums (sum).
+
+    Year=max corresponds to the newest car on the policy (smallest age) — used
+    both for YearBin and for the PredictedCredit "Vehicle Min Age Range".
     """
     df = df.copy()
     df["LiabLimits"] = list(zip(df["LiabLimits1"], df["LiabLimits2"]))
@@ -65,12 +91,18 @@ def preprocess_car(df: pd.DataFrame) -> pd.DataFrame:
     invalid_ids = df[df["LiabLimits"].isna()]["RateLinkID"].unique()
     df = df[~df["RateLinkID"].isin(invalid_ids)]
 
+    df["County"] = (
+        df["County"].astype("string").str.strip().str.upper()
+          .replace({"": pd.NA}).fillna("UNKNOWN")
+    )
+
     return (
         df.groupby("RateLinkID")
           .agg(
               LiabLimits=("LiabLimits", "first"),
+              County=("County", "first"),
               NumVehicles=("Year", "count"),
-              Year=("Year", "max"),
+              Year=("Year", "max"),         # newest car (smallest age)
               **{col: (col, "sum") for col in PREM_COLS},
           )
           .reset_index()
@@ -201,9 +233,46 @@ def apply_top_n_on_aggregated(
 
     # Re-group to merge the now-identically-named Other rows into one per
     # (YYYYMM, group_cols) combination.
-    value_cols = ["Quotes", "SumPremium", "BridgingCount", "SumBridgingPremium"]
+    return _regroup_aggregated(df, group_cols)
+
+
+def apply_county_top_n_on_aggregated(
+    df: pd.DataFrame, group_cols: list[str],
+) -> pd.DataFrame:
+    """Collapse counties outside the per-state top-N into a single 'Other' bucket.
+
+    MUST be called on the CONCATENATED multi-month aggregate (same reasoning
+    as apply_top_n_on_aggregated). "Top" is sum(Quotes) per County.
+    """
+    if "County" not in df.columns or df.empty:
+        return df
+
+    top = (
+        df.groupby("County")["Quotes"].sum()
+          .sort_values(ascending=False)
+          .head(TOP_N_COUNTIES)
+          .index.tolist()
+    )
+    df = df.copy()
+    df.loc[~df["County"].isin(top), "County"] = "Other"
+    return _regroup_aggregated(df, group_cols)
+
+
+# Value (non-dimension) columns produced by aggregate._aggregate_one_state.
+# Kept here so both top-N reducers regroup the same metrics.
+AGG_VALUE_COLS: list[str] = [
+    "Quotes", "SumPremium", "BridgingCount", "SumBridgingPremium",
+    "SumLiabBIPremium", "SumLiabPDPremium", "SumCompPremium", "SumCollPremium",
+    "SumMedPayPremium", "SumUIMBIPremium", "SumUIMPDPremium",
+    "SumUninsBIPremium", "SumUninsPDPremium",
+]
+
+
+def _regroup_aggregated(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+    """Re-aggregate after collapsing values in some dimension column."""
+    cols = [c for c in AGG_VALUE_COLS if c in df.columns]
     return (
-        df.groupby(group_cols + ["YYYYMM"])[value_cols]
+        df.groupby(group_cols + ["YYYYMM"], dropna=False)[cols]
           .sum()
           .reset_index()
     )

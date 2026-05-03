@@ -72,7 +72,23 @@
     </div>
   </div>
 
-  <!-- Row 3 -->
+  <!-- Row 3 — credit + county -->
+  <div class="filter-row">
+    <div class="control">
+      <label for="credit-min">Min Predicted Credit</label>
+      <select id="credit-min"></select>
+    </div>
+    <div class="control">
+      <label for="credit-max">Max Predicted Credit</label>
+      <select id="credit-max"></select>
+    </div>
+    <div class="control">
+      <label for="county">County</label>
+      <select id="county"></select>
+    </div>
+  </div>
+
+  <!-- Row 4 -->
   <div class="filter-row">
     <div class="control">
       <label for="non-owner">Non Owner</label>
@@ -100,6 +116,26 @@
     <button id="reset">Reset filters</button>
     <span class="status" id="status">Initializing…</span>
   </div>
+
+  <!-- Discount Simulator (collapsible) -->
+  <details id="discount-panel" class="discount-panel">
+    <summary>Discount Simulator <span class="hint">— applied only to highlighted reference companies</span></summary>
+    <div class="discount-grid">
+      <div class="control"><label for="disc-LiabBI">Liab BI %</label><input type="number" id="disc-LiabBI" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-LiabPD">Liab PD %</label><input type="number" id="disc-LiabPD" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-Comp">Comp %</label><input type="number" id="disc-Comp" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-Coll">Coll %</label><input type="number" id="disc-Coll" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-MedPay">MedPay %</label><input type="number" id="disc-MedPay" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-UIMBI">UIM BI %</label><input type="number" id="disc-UIMBI" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-UIMPD">UIM PD %</label><input type="number" id="disc-UIMPD" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-UninsBI">Uninsured BI %</label><input type="number" id="disc-UninsBI" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-UninsPD">Uninsured PD %</label><input type="number" id="disc-UninsPD" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control discount-actions">
+        <button id="disc-reset" type="button">Reset all to 0%</button>
+      </div>
+    </div>
+    <p class="hint">Positive = discount, negative = price increase. Capped at +100%.</p>
+  </details>
 </section>
 
 <main>

@@ -26,8 +26,13 @@ import pandas as pd
 
 from . import sql
 from .aggregate import fetch_and_aggregate
-from .config import COMPANY_MAP_BY_STATE, COMPARISON_COMPANY_BY_STATE, GROUP_COLS
-from .preprocess import apply_top_n_on_aggregated
+from .config import (
+    ACTIVE_STATES, COMPANY_MAP_BY_STATE, COMPARISON_COMPANY_BY_STATE,
+    GROUP_COLS, OUR_COMPANIES_BY_STATE,
+)
+from .preprocess import (
+    apply_county_top_n_on_aggregated, apply_top_n_on_aggregated,
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT / "docs" / "data"
@@ -94,6 +99,7 @@ def merge_and_write(
         return None
 
     combined = apply_top_n_on_aggregated(combined, state, GROUP_COLS)
+    combined = apply_county_top_n_on_aggregated(combined, GROUP_COLS)
 
     out = DATA_DIR / f"{state}.parquet"
     if not dry_run:
@@ -103,13 +109,17 @@ def merge_and_write(
     print(f"  {state}: {len(combined):>7,} rows, {size_kb:>6.0f} KB  "
           f"({combined['YYYYMM'].nunique()} months)")
 
+    counties = sorted(combined["County"].dropna().unique().tolist()) if "County" in combined.columns else []
+
     return {
         "state": state,
         "rows": int(len(combined)),
         "months": sorted(int(m) for m in combined["YYYYMM"].unique()),
         "companies": sorted(combined["CompanyName"].unique().tolist()),
+        "counties": counties,
         "curated": state in COMPANY_MAP_BY_STATE,
         "comparison_company": COMPARISON_COMPANY_BY_STATE.get(state),
+        "our_companies": OUR_COMPANIES_BY_STATE.get(state, []),
     }
 
 
@@ -132,6 +142,36 @@ def write_index(entries: list[dict]) -> None:
     }
     index_path.write_text(json.dumps(payload, indent=2, default=str))
     print(f"\nIndex: {index_path} ({len(existing_states)} states total)")
+
+
+def prune_inactive_states(*, dry_run: bool) -> None:
+    """Delete parquet files and index entries for states not in ACTIVE_STATES."""
+    index_path = DATA_DIR / "index.json"
+    removed_files: list[str] = []
+    for path in DATA_DIR.glob("*.parquet"):
+        if path.stem not in ACTIVE_STATES:
+            removed_files.append(path.name)
+            if not dry_run:
+                path.unlink()
+
+    if index_path.exists():
+        try:
+            payload = json.loads(index_path.read_text())
+            states = payload.get("states", {})
+            inactive = [s for s in states if s not in ACTIVE_STATES]
+            for s in inactive:
+                states.pop(s, None)
+            if inactive and not dry_run:
+                payload["states"] = states
+                index_path.write_text(json.dumps(payload, indent=2, default=str))
+        except Exception:
+            inactive = []
+    else:
+        inactive = []
+
+    if removed_files or inactive:
+        verb = "Would remove" if dry_run else "Removed"
+        print(f"\n{verb} inactive states: parquets={removed_files}, index entries={inactive}")
 
 
 def refresh_state(state: str, months: list[str], *, dry_run: bool) -> dict | None:
@@ -187,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.missing:
         found = discover()
+        found = {s: ms for s, ms in found.items() if s in ACTIVE_STATES}
         targets = compute_missing(found)
         if args.state:
             targets = {s: ms for s, ms in targets.items() if s == args.state}
@@ -199,7 +240,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {s}: {len(ms):>3}  ({ms[0]} .. {ms[-1]})", flush=True)
     elif args.all:
         found = discover()
-        targets = dict(found)
+        targets = {s: ms for s, ms in found.items() if s in ACTIVE_STATES}
+        print(f"\nActive states: {sorted(ACTIVE_STATES)}", flush=True)
     elif args.state:
         if not args.months and not args.all_months:
             p.error("--state requires --months or --all-months")
@@ -225,6 +267,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.dry_run and entries:
         write_index(entries)
+
+    # When refreshing the full active set, drop any stale parquets/index entries
+    # for states no longer in ACTIVE_STATES.
+    if args.all:
+        prune_inactive_states(dry_run=args.dry_run)
 
     return 0
 

@@ -8,7 +8,16 @@ import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 
 const PREM_BIN_SIZE = 500;
 const PREM_BIN_CAP  = 5000;
+const CREDIT_BIN_SIZE = 50;
+const CREDIT_BIN_MIN = 600;
+const CREDIT_BIN_MAX = 1750;
 const YEAR_LABELS   = ["pre-2010", "2010-2014", "2015-2019", "2020+"];
+
+// Coverage IDs match Sum<Id>Premium columns in the parquet, and disc-<Id> input IDs.
+const COVERAGES = [
+  "LiabBI", "LiabPD", "Comp", "Coll", "MedPay",
+  "UIMBI", "UIMPD", "UninsBI", "UninsPD",
+];
 
 const PAYPLAN_ORDER = [
   "8% down, 12 payments", "10% down, 12 payments", "17% down, 6 payments",
@@ -53,7 +62,7 @@ async function init() {
   populateStateDropdown();
   wireControls();
 
-  const states = Object.keys(app.index.states).sort();
+  const states = activeStates();
   const initial = states.includes("IL") ? "IL" : states[0];
   if (initial) {
     document.getElementById("state").value = initial;
@@ -100,10 +109,19 @@ async function loadState(stateCode) {
 
 // ─── dropdowns ─────────────────────────────────────────────────────────────
 
+// States that have OUR_COMPANIES defined (i.e. listed in the index with our_companies).
+// Acts as the gate for what shows in the State dropdown.
+function activeStates() {
+  return Object.keys(app.index.states)
+    .filter(s => Array.isArray(app.index.states[s].our_companies)
+                 && app.index.states[s].our_companies.length > 0)
+    .sort();
+}
+
 function populateStateDropdown() {
   const sel = document.getElementById("state");
   sel.innerHTML = "";
-  for (const s of Object.keys(app.index.states).sort()) {
+  for (const s of activeStates()) {
     const opt = document.createElement("option");
     opt.value = s; opt.textContent = s;
     sel.appendChild(opt);
@@ -155,9 +173,33 @@ async function populateFiltersFromData() {
   setOptions("term", ["6", "12"], "6");
   setOptions("non-owner", ["Any", "No", "Yes"], "Any");
   setOptions("num-drivers",  ["Any", "1", "2", "3", "4+"], "Any");
-  setOptions("num-vehicles", ["Any", "1", "2", "3+"], "Any");
+  setOptions("num-vehicles", ["Any", "1", "2", "3", "4", "5+"], "Any");
   setOptions("prior-insurance", ["Any", "No", "Yes"], "Any");
   setOptions("year-bin", ["Any", ...YEAR_LABELS], "Any");
+
+  // Credit min/max: 50-pt buckets from CREDIT_BIN_MIN to CREDIT_BIN_MAX.
+  const creditBins = [];
+  for (let v = CREDIT_BIN_MIN; v <= CREDIT_BIN_MAX; v += CREDIT_BIN_SIZE) creditBins.push(v);
+  setOptions("credit-min", creditBins, CREDIT_BIN_MIN);
+  setOptions("credit-max", creditBins, CREDIT_BIN_MAX);
+
+  // County: Any + actual counties present (from index entry, falls back to query).
+  let counties = entry.counties || [];
+  if (!counties.length) {
+    try {
+      const rows = await sqlRows(
+        `SELECT DISTINCT County FROM mb WHERE County IS NOT NULL ORDER BY County`
+      );
+      counties = rows.map(r => r.County);
+    } catch (e) { console.warn("county query failed", e); }
+  }
+  // Show "Other" last for readability.
+  counties = counties.slice().sort((a, b) => {
+    if (a === "Other") return 1;
+    if (b === "Other") return -1;
+    return a.localeCompare(b);
+  });
+  setOptions("county", ["Any", ...counties], "Any");
 
   document.getElementById("market-provider").value = "ITC";
 }
@@ -171,6 +213,9 @@ function currentFilters() {
     dateTo:   parseInt(v("date-to"),   10),
     premMin:  parseInt(v("prem-min"),  10),
     premMax:  parseInt(v("prem-max"),  10),
+    creditMin: parseInt(v("credit-min"), 10),
+    creditMax: parseInt(v("credit-max"), 10),
+    county:   v("county"),
     liab:     v("liab"),
     payplan:  v("payplan"),
     term:     parseInt(v("term"), 10),
@@ -183,6 +228,24 @@ function currentFilters() {
   };
 }
 
+// Read all 9 discount inputs and clamp to (-Inf, 100]. Returns object keyed by COVERAGES name.
+function currentDiscounts() {
+  const out = {};
+  for (const c of COVERAGES) {
+    const el = document.getElementById(`disc-${c}`);
+    let n = el ? Number(el.value) : 0;
+    if (!Number.isFinite(n)) n = 0;
+    if (n > 100) n = 100;
+    out[c] = n;
+  }
+  return out;
+}
+
+// Has any non-zero discount? Avoids the CASE expression when nothing is set.
+function anyDiscountActive(disc) {
+  return Object.values(disc).some(v => v !== 0);
+}
+
 function whereClause(f) {
   const conds = [];
   conds.push(`YYYYMM >= ${f.dateFrom}`);
@@ -190,6 +253,13 @@ function whereClause(f) {
   conds.push(`PremBin >= ${f.premMin}`);
   conds.push(`PremBin <  ${f.premMax}`);
   conds.push(`Term = ${f.term}`);
+  // Credit range: filters out NULL CreditBin rows when credit min/max moved off
+  // their defaults. When at default extremes, allow NULL through.
+  const creditAtDefault = (f.creditMin === CREDIT_BIN_MIN && f.creditMax === CREDIT_BIN_MAX);
+  if (!creditAtDefault) {
+    conds.push(`CreditBin IS NOT NULL AND CreditBin >= ${f.creditMin} AND CreditBin <= ${f.creditMax}`);
+  }
+  if (f.county !== "Any") conds.push(`County = '${f.county.replace(/'/g, "''")}'`);
   if (f.liab    !== "Any") conds.push(`LiabLimits = '${f.liab}'`);
   if (f.payplan !== "Any") conds.push(`PayPlan = '${f.payplan.replace(/'/g, "''")}'`);
   if (f.numDrv  !== "Any") conds.push(`NumDrivers = '${f.numDrv}'`);
@@ -208,6 +278,26 @@ function whereClause(f) {
   // "ITC" and "Any" pass through (current data is all ITC)
 
   return "WHERE " + conds.join(" AND ");
+}
+
+/**
+ * Build a SQL expression that returns the per-row "adjusted SumPremium" —
+ * applies coverage discounts only to companies in `ourCompanies`. When no
+ * discounts are active, falls back to plain SumPremium.
+ *
+ * Discount semantics: positive = discount (reduce premium), negative = surcharge.
+ * Floored at 0 implicitly via the +100% cap on inputs (sum of coverage
+ * subtractions can't exceed sum of coverages).
+ */
+function adjustedSumPremiumSQL(disc, ourCompanies) {
+  if (!anyDiscountActive(disc) || !ourCompanies || ourCompanies.length === 0) {
+    return "SumPremium";
+  }
+  const inList = ourCompanies.map(c => `'${c.replace(/'/g, "''")}'`).join(",");
+  const subtract = COVERAGES
+    .map(c => `${(disc[c] / 100)} * Sum${c}Premium`)
+    .join(" + ");
+  return `CASE WHEN CompanyName IN (${inList}) THEN SumPremium - (${subtract}) ELSE SumPremium END`;
 }
 
 // ─── grid ──────────────────────────────────────────────────────────────────
@@ -283,6 +373,16 @@ async function refreshAll() {
 
   const f = currentFilters();
   const where = whereClause(f);
+  const disc = currentDiscounts();
+  const entry = app.index.states[app.currentState];
+  const ourCompanies = entry.our_companies || [];
+
+  // Per-row adjusted SumPremium (applies coverage discounts to our companies).
+  const adjPrem = adjustedSumPremiumSQL(disc, ourCompanies);
+  // Per-row scale factor for bridging — same proportional discount as the
+  // written premium. Avoids divide-by-zero on rows with SumPremium=0.
+  const scale = `CASE WHEN SumPremium > 0 THEN (${adjPrem}) / SumPremium ELSE 1 END`;
+  const adjBridge = `${scale} * SumBridgingPremium`;
 
   // Cast sums to DOUBLE so JS gets regular numbers, not BigInt.
   // SUM on INT returns BIGINT, which comes through as BigInt in JS and
@@ -290,14 +390,12 @@ async function refreshAll() {
   const aggRows = await sqlRows(`
     SELECT  CompanyName,
             CAST(SUM(Quotes)             AS DOUBLE) AS Quotes,
-            CAST(SUM(SumPremium)         AS DOUBLE) AS SumPremium,
+            CAST(SUM(${adjPrem})         AS DOUBLE) AS SumPremium,
             CAST(SUM(BridgingCount)      AS DOUBLE) AS BridgingCount,
-            CAST(SUM(SumBridgingPremium) AS DOUBLE) AS SumBridgingPremium
+            CAST(SUM(${adjBridge})       AS DOUBLE) AS SumBridgingPremium
     FROM mb ${where}
     GROUP BY CompanyName
   `);
-
-  const entry = app.index.states[app.currentState];
 
   // Always show every company that exists in this state. If the current
   // filter returns zero rows for a company, show it with zeros instead of
@@ -469,6 +567,7 @@ function wireControls() {
   const filterIds = [
     "date-from", "date-to", "prem-min", "prem-max",
     "liab", "payplan", "term", "market-provider",
+    "credit-min", "credit-max", "county",
     "non-owner", "num-drivers", "num-vehicles",
     "prior-insurance", "year-bin",
   ];
@@ -476,8 +575,31 @@ function wireControls() {
     document.getElementById(id).addEventListener("change", refreshAll);
   }
 
+  // Discount Simulator: per-coverage inputs trigger a refresh on change/input.
+  // Clamp >100 on blur (the +100% cap).
+  for (const c of COVERAGES) {
+    const el = document.getElementById(`disc-${c}`);
+    if (!el) continue;
+    el.addEventListener("change", () => {
+      if (Number(el.value) > 100) el.value = "100";
+      refreshAll();
+    });
+  }
+  document.getElementById("disc-reset").addEventListener("click", () => {
+    for (const c of COVERAGES) {
+      const el = document.getElementById(`disc-${c}`);
+      if (el) el.value = "0";
+    }
+    refreshAll();
+  });
+
   document.getElementById("reset").addEventListener("click", async () => {
     await populateFiltersFromData();
+    // Also reset discount inputs.
+    for (const c of COVERAGES) {
+      const el = document.getElementById(`disc-${c}`);
+      if (el) el.value = "0";
+    }
     await refreshAll();
   });
 
