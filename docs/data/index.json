@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-04-21T14:20:45.718265+00:00",
+  "generated_at": "2026-05-03T02:03:07.152230+00:00",
   "source": "sql",
   "states": {
     "AZ": {
       "state": "AZ",
-      "rows": 443105,
+      "rows": 2450865,
       "months": [
         202508,
         202509,
@@ -38,12 +38,29 @@
         "Safeway",
         "SunCoast"
       ],
+      "counties": [
+        "COCHISE",
+        "COCONINO",
+        "GILA",
+        "MARICOPA",
+        "MOHAVE",
+        "NAVAJO",
+        "Other",
+        "PIMA",
+        "PINAL",
+        "YAVAPAI",
+        "YUMA"
+      ],
       "curated": true,
-      "comparison_company": "SunCoast"
+      "comparison_company": "SunCoast",
+      "our_companies": [
+        "SunCoast",
+        "SIC"
+      ]
     },
     "IL": {
       "state": "IL",
-      "rows": 560601,
+      "rows": 2893119,
       "months": [
         202405,
         202406,
@@ -85,107 +102,25 @@
         "USIC",
         "UnitedEquitable"
       ],
+      "counties": [
+        "COOK",
+        "DU PAGE",
+        "KANE",
+        "LAKE",
+        "MADISON",
+        "Other",
+        "PEORIA",
+        "SANGAMON",
+        "UNKNOWN",
+        "WILL",
+        "WINNEBAGO"
+      ],
       "curated": true,
-      "comparison_company": "UIC"
-    },
-    "IN": {
-      "state": "IN",
-      "rows": 230043,
-      "months": [
-        202509,
-        202510,
-        202511,
-        202512,
-        202601,
-        202602,
-        202603
-      ],
-      "companies": [
-        "10032141",
-        "105189788",
-        "126229347",
-        "128914496",
-        "128915756",
-        "130093041",
-        "139072529",
-        "15274237",
-        "48963025",
-        "7870107",
-        "8133224",
-        "8915711",
-        "95161375",
-        "9575331",
-        "95817409",
-        "Other"
-      ],
-      "curated": false,
-      "comparison_company": null
-    },
-    "TN": {
-      "state": "TN",
-      "rows": 208846,
-      "months": [
-        202509,
-        202510,
-        202511,
-        202512,
-        202601,
-        202602,
-        202603
-      ],
-      "companies": [
-        "10032140",
-        "105189808",
-        "116001821",
-        "126227631",
-        "130096758",
-        "133895781",
-        "30739635",
-        "3870841",
-        "48960076",
-        "7869976",
-        "7870648",
-        "8132911",
-        "8915981",
-        "95162058",
-        "95819139",
-        "Other"
-      ],
-      "curated": false,
-      "comparison_company": null
-    },
-    "TX": {
-      "state": "TX",
-      "rows": 157761,
-      "months": [
-        202509,
-        202510,
-        202511,
-        202512,
-        202601,
-        202602,
-        202603
-      ],
-      "companies": [
-        "10032078",
-        "126226343",
-        "130093013",
-        "130489319",
-        "139532371",
-        "140516040",
-        "145626170",
-        "153099965",
-        "48961154",
-        "7870287",
-        "7871274",
-        "8130457",
-        "8914786",
-        "95160659",
-        "95162047",
-        "Other"
-      ],
-      "curated": false,
-      "comparison_company": null
+      "comparison_company": "UIC",
+      "our_companies": [
+        "UIC",
+        "SIC"
+      ]
     }
   }
 }
