@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-05-03T02:03:07.152230+00:00",
+  "generated_at": "2026-05-04T18:54:03.635564+00:00",
   "source": "sql",
   "states": {
     "AZ": {
       "state": "AZ",
-      "rows": 2450865,
+      "rows": 2284720,
       "months": [
         202508,
         202509,
@@ -16,11 +16,6 @@
         202603
       ],
       "companies": [
-        "130489606",
-        "139468345",
-        "139530609",
-        "140909900",
-        "95165405",
         "Alpine",
         "AssuranceAmerica",
         "Bristol West",
@@ -60,7 +55,7 @@
     },
     "IL": {
       "state": "IL",
-      "rows": 2893119,
+      "rows": 3219373,
       "months": [
         202405,
         202406,
@@ -103,14 +98,21 @@
         "UnitedEquitable"
       ],
       "counties": [
+        "CHAMPAIGN",
         "COOK",
-        "DU PAGE",
+        "DUPAGE",
         "KANE",
+        "KANKAKEE",
         "LAKE",
+        "MACON",
         "MADISON",
+        "MCHENRY",
+        "MCLEAN",
         "Other",
         "PEORIA",
+        "ROCKISLAND",
         "SANGAMON",
+        "STCLAIR",
         "UNKNOWN",
         "WILL",
         "WINNEBAGO"
