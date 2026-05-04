@@ -121,6 +121,7 @@
   <details id="discount-panel" class="discount-panel">
     <summary>Discount Simulator <span class="hint">— applied only to highlighted reference companies</span></summary>
     <div class="discount-grid">
+      <div class="control disc-total"><label for="disc-Total">Total %</label><input type="number" id="disc-Total" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-LiabBI">Liab BI %</label><input type="number" id="disc-LiabBI" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-LiabPD">Liab PD %</label><input type="number" id="disc-LiabPD" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-Comp">Comp %</label><input type="number" id="disc-Comp" min="-1000" max="100" step="1" value="0"></div>
@@ -134,7 +135,7 @@
         <button id="disc-reset" type="button">Reset all to 0%</button>
       </div>
     </div>
-    <p class="hint">Positive = discount, negative = price increase. Capped at +100%.</p>
+    <p class="hint">Total stacks additively with per-coverage. Positive = discount, negative = price increase. Capped at +100%; adjusted premium floored at 0.</p>
   </details>
 </section>
 

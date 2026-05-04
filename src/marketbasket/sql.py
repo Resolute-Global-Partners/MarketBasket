@@ -115,3 +115,55 @@ def fetch_violation(state: str, yyyymm: str) -> pd.DataFrame:
         f"WHERE State_Name = '{state}' AND Year_Month = '{yyyymm}'",
         DB,
     )
+
+
+# ─── Per-state pulls (all months in one query) ───────────────────────────────
+#
+# fact_Rate has zero indexes, so each WHERE-filtered query scans the full 198M-row
+# table regardless of how narrow the filter is. Pulling 23 months in one query
+# pays the scan once instead of 23 times — ~10-15x faster end-to-end.
+#
+# Year_Month comes back on the result so callers can split by month locally.
+
+def _state_in_clause(state: str, months: list[str]) -> str:
+    if not _STATE_RE.match(state):
+        raise ValueError(f"state must be 2 uppercase letters, got {state!r}")
+    for m in months:
+        if not _YYYYMM_RE.match(m):
+            raise ValueError(f"yyyymm must be 6 digits, got {m!r}")
+    quoted = ", ".join(f"'{m}'" for m in months)
+    return f"State_Name = '{state}' AND Year_Month IN ({quoted})"
+
+
+def fetch_rate_state(state: str, months: list[str]) -> pd.DataFrame:
+    """fact_Rate rows for one state across many months. Returns a single frame
+    with a Year_Month column so callers can split it locally."""
+    return load(
+        f"SELECT {_select(RATE_COLS)}, Year_Month FROM dbo.fact_Rate "
+        f"WHERE {_state_in_clause(state, months)}",
+        DB,
+    )
+
+
+def fetch_car_state(state: str, months: list[str]) -> pd.DataFrame:
+    return load(
+        f"SELECT {_select(CAR_COLS)}, Year_Month FROM dbo.fact_Rate_Car "
+        f"WHERE {_state_in_clause(state, months)}",
+        DB,
+    )
+
+
+def fetch_driver_state(state: str, months: list[str]) -> pd.DataFrame:
+    return load(
+        f"SELECT {_select(DRV_COLS)}, Year_Month FROM dbo.fact_Rate_Driver "
+        f"WHERE {_state_in_clause(state, months)}",
+        DB,
+    )
+
+
+def fetch_violation_state(state: str, months: list[str]) -> pd.DataFrame:
+    return load(
+        f"SELECT {_select(VIOL_COLS)}, Year_Month FROM dbo.fact_Rate_Violation "
+        f"WHERE {_state_in_clause(state, months)}",
+        DB,
+    )

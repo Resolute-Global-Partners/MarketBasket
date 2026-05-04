@@ -54,9 +54,9 @@ COMPANY_MAP_BY_STATE: dict[str, dict[int, str]] = {
     "AZ": COMPANY_MAP_AZ,
 }
 
-# States whose curated map is considered exhaustive: rows for unmapped companies
-# are dropped entirely (rather than kept by raw CompanyId).
-EXHAUSTIVE_MAP_STATES: set[str] = {"IL"}
+# States whose curated map is considered exhaustive: ALL unmapped CompanyIds
+# collapse into the single "Other" bucket (no top-N kept by ID).
+EXHAUSTIVE_MAP_STATES: set[str] = {"IL", "AZ"}
 
 # Comparison column per state. Left (secondary) column vs the named company,
 # right (always-present) column vs SIC. States absent from this dict → no
@@ -79,8 +79,10 @@ ACTIVE_STATES: set[str] = {"IL", "AZ"}
 # For non-curated states: how many top companies to display by distinct policy count.
 TOP_N_NON_CURATED = 15
 
-# Top-N counties (per state) kept individually; the rest collapse to "Other".
-TOP_N_COUNTIES = 10
+# Counties: keep the largest counties (by Quotes) until cumulative coverage
+# hits this fraction of total Quotes. Everything below collapses to "Other".
+# 0.90 means Other will be at most ~10% of the state's quotes.
+COUNTY_COVERAGE_TARGET = 0.90
 
 
 # ── PercentDown normalization ──────────────────────────────────────────────────

@@ -25,7 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import sql
-from .aggregate import fetch_and_aggregate
+from .aggregate import fetch_and_aggregate, fetch_and_aggregate_state
 from .config import (
     ACTIVE_STATES, COMPANY_MAP_BY_STATE, COMPARISON_COMPANY_BY_STATE,
     GROUP_COLS, OUR_COMPANIES_BY_STATE,
@@ -181,15 +181,25 @@ def refresh_state(state: str, months: list[str], *, dry_run: bool) -> dict | Non
         print(f"  existing: {len(existing):,} rows, "
               f"{existing['YYYYMM'].nunique()} months")
 
+    # For multi-month refreshes, one full-table scan beats N. For a single
+    # month the per-(state, month) path is identical cost.
     chunks: list[pd.DataFrame] = []
-    for m in months:
+    if len(months) > 1:
         try:
-            chunk = fetch_and_aggregate(state, m)
+            chunks = fetch_and_aggregate_state(state, months)
         except Exception as e:
-            print(f"!! {state} {m}: {type(e).__name__}: {e}", file=sys.stderr)
-            continue
-        if not chunk.empty:
-            chunks.append(chunk)
+            print(f"!! {state} batched fetch failed: {type(e).__name__}: {e}", file=sys.stderr)
+            print(f"   falling back to per-month pulls", file=sys.stderr)
+            chunks = []
+    if not chunks and months:
+        for m in months:
+            try:
+                chunk = fetch_and_aggregate(state, m)
+            except Exception as e:
+                print(f"!! {state} {m}: {type(e).__name__}: {e}", file=sys.stderr)
+                continue
+            if not chunk.empty:
+                chunks.append(chunk)
 
     if not chunks and existing.empty:
         print(f"  no data for {state}")

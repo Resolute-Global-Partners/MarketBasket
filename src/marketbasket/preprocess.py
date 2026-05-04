@@ -14,11 +14,11 @@ import pandas as pd
 
 from .config import (
     COMPANY_MAP_BY_STATE,
+    COUNTY_COVERAGE_TARGET,
     EXHAUSTIVE_MAP_STATES,
     PERCENT_DOWN_REMAP,
     PREM_COLS,
     TOP_14_PLANS,
-    TOP_N_COUNTIES,
     TOP_N_NON_CURATED,
     VALID_LIAB,
 )
@@ -74,11 +74,33 @@ def preprocess_driver(df_driver: pd.DataFrame, df_violation: pd.DataFrame) -> pd
     )
 
 
+_COUNTY_SYNONYMS: dict[str, str] = {
+    # Same county, different spellings observed in IL fact_Rate_Car.
+    "SAINTCLAIR": "STCLAIR",
+}
+
+
+def _normalize_county(s: pd.Series) -> pd.Series:
+    """Uppercase, strip non-letters, then apply synonym map.
+
+    Collapses 'DU PAGE' / 'DuPage' / 'du-page' all to 'DUPAGE'; 'St. Clair'
+    and 'SAINT CLAIR' both end up as 'STCLAIR' via the synonym table.
+    Empty / null / non-string -> 'UNKNOWN'.
+    """
+    out = (
+        s.astype("string").str.upper()
+         .str.replace(r"[^A-Z]", "", regex=True)
+         .replace({"": pd.NA})
+         .fillna("UNKNOWN")
+    )
+    return out.replace(_COUNTY_SYNONYMS)
+
+
 def preprocess_car(df: pd.DataFrame) -> pd.DataFrame:
     """fact_Rate_Car → one row per RateLinkID.
 
     1. Drop RateLinkIDs where ANY car has an invalid LiabLimits (not in {25/50, 50/100, 100/300}).
-    2. Normalize County: strip whitespace, uppercase. Empty/null → "UNKNOWN".
+    2. Normalize County: uppercase, strip non-letters, apply synonyms; empty -> "UNKNOWN".
     3. Aggregate: LiabLimits/County (first car), NumVehicles, Year (max),
        coverage premiums (sum).
 
@@ -91,10 +113,7 @@ def preprocess_car(df: pd.DataFrame) -> pd.DataFrame:
     invalid_ids = df[df["LiabLimits"].isna()]["RateLinkID"].unique()
     df = df[~df["RateLinkID"].isin(invalid_ids)]
 
-    df["County"] = (
-        df["County"].astype("string").str.strip().str.upper()
-          .replace({"": pd.NA}).fillna("UNKNOWN")
-    )
+    df["County"] = _normalize_county(df["County"])
 
     return (
         df.groupby("RateLinkID")
@@ -239,22 +258,33 @@ def apply_top_n_on_aggregated(
 def apply_county_top_n_on_aggregated(
     df: pd.DataFrame, group_cols: list[str],
 ) -> pd.DataFrame:
-    """Collapse counties outside the per-state top-N into a single 'Other' bucket.
+    """Collapse small counties into 'Other'.
+
+    Keeps the largest counties (by Quotes) until cumulative coverage hits
+    COUNTY_COVERAGE_TARGET (default 0.90). Everything else -> Other. Adapts
+    to each state — AZ needs ~5 to hit 90%, IL needs ~20.
 
     MUST be called on the CONCATENATED multi-month aggregate (same reasoning
-    as apply_top_n_on_aggregated). "Top" is sum(Quotes) per County.
+    as apply_top_n_on_aggregated).
     """
     if "County" not in df.columns or df.empty:
         return df
 
-    top = (
+    by_county = (
         df.groupby("County")["Quotes"].sum()
           .sort_values(ascending=False)
-          .head(TOP_N_COUNTIES)
-          .index.tolist()
     )
+    total = by_county.sum()
+    if total <= 0:
+        return df
+
+    cumshare = by_county.cumsum() / total
+    # Keep counties up to and including the one that crosses the target.
+    keep_mask = cumshare.shift(fill_value=0.0) < COUNTY_COVERAGE_TARGET
+    keep = by_county.index[keep_mask].tolist()
+
     df = df.copy()
-    df.loc[~df["County"].isin(top), "County"] = "Other"
+    df.loc[~df["County"].isin(keep), "County"] = "Other"
     return _regroup_aggregated(df, group_cols)
 
 

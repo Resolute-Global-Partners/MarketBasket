@@ -172,6 +172,12 @@ header h1 {
   gap: 10px 14px;
   margin-top: 10px;
 }
+/* Total Discount sits first; tinted to call attention to the bulk control. */
+.discount-grid .disc-total label { color: var(--accent); font-weight: 600; }
+.discount-grid .disc-total input[type="number"] {
+  border-color: var(--accent-2);
+  background: #f5f8ff;
+}
 .discount-grid input[type="number"] {
   padding: 7px 10px;
   font-size: 13px;
@@ -267,6 +273,11 @@ main {
 
 .cell-pos { color: var(--good); font-weight: 600; }
 .cell-neg { color: var(--bad); font-weight: 600; }
+
+/* Coverage breakdown columns at far right — subtle tint to set them apart. */
+.ag-theme-quartz .ag-cell.cell-coverage { background-color: rgba(31,56,100,0.04); }
+.ag-row.row-reference .ag-cell.cell-coverage { background-color: rgba(255,236,128,0.6) !important; }
+.ag-row.row-total .ag-cell.cell-coverage { background-color: rgba(31,56,100,0.10) !important; }
 
 footer {
   text-align: right;

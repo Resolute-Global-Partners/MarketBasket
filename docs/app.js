@@ -228,22 +228,25 @@ function currentFilters() {
   };
 }
 
-// Read all 9 discount inputs and clamp to (-Inf, 100]. Returns object keyed by COVERAGES name.
+// Read all discount inputs (Total + 9 per-coverage) and clamp to (-Inf, 100].
+// Returns { total: <number>, coverages: {LiabBI: <number>, ...} }.
 function currentDiscounts() {
-  const out = {};
-  for (const c of COVERAGES) {
-    const el = document.getElementById(`disc-${c}`);
+  const readClamp = id => {
+    const el = document.getElementById(id);
     let n = el ? Number(el.value) : 0;
     if (!Number.isFinite(n)) n = 0;
     if (n > 100) n = 100;
-    out[c] = n;
-  }
-  return out;
+    return n;
+  };
+  const coverages = {};
+  for (const c of COVERAGES) coverages[c] = readClamp(`disc-${c}`);
+  return { total: readClamp("disc-Total"), coverages };
 }
 
 // Has any non-zero discount? Avoids the CASE expression when nothing is set.
 function anyDiscountActive(disc) {
-  return Object.values(disc).some(v => v !== 0);
+  if (disc.total !== 0) return true;
+  return Object.values(disc.coverages).some(v => v !== 0);
 }
 
 function whereClause(f) {
@@ -282,22 +285,30 @@ function whereClause(f) {
 
 /**
  * Build a SQL expression that returns the per-row "adjusted SumPremium" —
- * applies coverage discounts only to companies in `ourCompanies`. When no
- * discounts are active, falls back to plain SumPremium.
+ * applies discounts only to companies in `ourCompanies`. When no discounts
+ * are active, falls back to plain SumPremium.
  *
- * Discount semantics: positive = discount (reduce premium), negative = surcharge.
- * Floored at 0 implicitly via the +100% cap on inputs (sum of coverage
- * subtractions can't exceed sum of coverages).
+ * Stacking is additive:
+ *   adjusted = SumPremium - (total% * SumPremium) - Σ(cov% * Sum<C>Premium)
+ *   adjusted = GREATEST(adjusted, 0)
+ *
+ * So Total=10% + LiabBI=20% means LiabBI dollars effectively get 30% off,
+ * other dollars get 10% off. Total=100% with everything else 0 -> 0.
+ * Positive = discount, negative = surcharge.
  */
 function adjustedSumPremiumSQL(disc, ourCompanies) {
   if (!anyDiscountActive(disc) || !ourCompanies || ourCompanies.length === 0) {
     return "SumPremium";
   }
   const inList = ourCompanies.map(c => `'${c.replace(/'/g, "''")}'`).join(",");
-  const subtract = COVERAGES
-    .map(c => `${(disc[c] / 100)} * Sum${c}Premium`)
-    .join(" + ");
-  return `CASE WHEN CompanyName IN (${inList}) THEN SumPremium - (${subtract}) ELSE SumPremium END`;
+  const parts = [];
+  if (disc.total !== 0) parts.push(`${disc.total / 100} * SumPremium`);
+  for (const c of COVERAGES) {
+    const v = disc.coverages[c];
+    if (v !== 0) parts.push(`${v / 100} * Sum${c}Premium`);
+  }
+  const subtract = parts.join(" + ");
+  return `CASE WHEN CompanyName IN (${inList}) THEN GREATEST(SumPremium - (${subtract}), 0) ELSE SumPremium END`;
 }
 
 // ─── grid ──────────────────────────────────────────────────────────────────
@@ -345,6 +356,18 @@ function buildGrid(entry) {
       valueFormatter: fmtPctSign, cellClass: diffClass });
   }
 
+  // Per-coverage avg breakdown — 9 columns at the far right.
+  // Header label is friendlier than the raw column id.
+  const COV_LABELS = {
+    LiabBI: "Liab BI", LiabPD: "Liab PD", Comp: "Comp", Coll: "Coll",
+    MedPay: "MedPay", UIMBI: "UIM BI", UIMPD: "UIM PD",
+    UninsBI: "Unins BI", UninsPD: "Unins PD",
+  };
+  for (const c of COVERAGES) {
+    cols.push({ ...COL, field: `Avg${c}`, headerName: `Avg\n${COV_LABELS[c]}`,
+      valueFormatter: fmtDollar, cellClass: "cell-coverage" });
+  }
+
   const gridDiv = document.getElementById("grid");
   gridDiv.innerHTML = "";
   app.grid = agGrid.createGrid(gridDiv, {
@@ -387,12 +410,18 @@ async function refreshAll() {
   // Cast sums to DOUBLE so JS gets regular numbers, not BigInt.
   // SUM on INT returns BIGINT, which comes through as BigInt in JS and
   // breaks arithmetic (e.g. bigint / bigint = integer division → 0).
+  // Per-coverage sums are unadjusted — the breakdown columns reflect the
+  // raw average policy mix, independent of the Discount Simulator.
+  const coverageSelects = COVERAGES
+    .map(c => `CAST(SUM(Sum${c}Premium) AS DOUBLE) AS Sum${c}`)
+    .join(",\n            ");
   const aggRows = await sqlRows(`
     SELECT  CompanyName,
             CAST(SUM(Quotes)             AS DOUBLE) AS Quotes,
             CAST(SUM(${adjPrem})         AS DOUBLE) AS SumPremium,
             CAST(SUM(BridgingCount)      AS DOUBLE) AS BridgingCount,
-            CAST(SUM(${adjBridge})       AS DOUBLE) AS SumBridgingPremium
+            CAST(SUM(${adjBridge})       AS DOUBLE) AS SumBridgingPremium,
+            ${coverageSelects}
     FROM mb ${where}
     GROUP BY CompanyName
   `);
@@ -403,10 +432,12 @@ async function refreshAll() {
   const seen = new Set(aggRows.map(r => r.CompanyName));
   for (const c of entry.companies) {
     if (!seen.has(c)) {
-      aggRows.push({
+      const filler = {
         CompanyName: c,
         Quotes: 0, SumPremium: 0, BridgingCount: 0, SumBridgingPremium: 0,
-      });
+      };
+      for (const cov of COVERAGES) filler[`Sum${cov}`] = 0;
+      aggRows.push(filler);
     }
   }
 
@@ -426,12 +457,18 @@ async function refreshAll() {
 function computeDerived(rows, entry) {
   const comparisonCo = entry.comparison_company;
 
-  const total = rows.reduce((a, r) => ({
-    Quotes:             a.Quotes + Number(r.Quotes || 0),
-    SumPremium:         a.SumPremium + Number(r.SumPremium || 0),
-    BridgingCount:      a.BridgingCount + Number(r.BridgingCount || 0),
-    SumBridgingPremium: a.SumBridgingPremium + Number(r.SumBridgingPremium || 0),
-  }), { Quotes: 0, SumPremium: 0, BridgingCount: 0, SumBridgingPremium: 0 });
+  const total = rows.reduce((a, r) => {
+    a.Quotes             += Number(r.Quotes || 0);
+    a.SumPremium         += Number(r.SumPremium || 0);
+    a.BridgingCount      += Number(r.BridgingCount || 0);
+    a.SumBridgingPremium += Number(r.SumBridgingPremium || 0);
+    for (const c of COVERAGES) a[`Sum${c}`] += Number(r[`Sum${c}`] || 0);
+    return a;
+  }, (() => {
+    const init = { Quotes: 0, SumPremium: 0, BridgingCount: 0, SumBridgingPremium: 0 };
+    for (const c of COVERAGES) init[`Sum${c}`] = 0;
+    return init;
+  })());
 
   const refCmpAvg = avgBridging(rows.find(r => r.CompanyName === comparisonCo));
   const refSICAvg = avgBridging(rows.find(r => r.CompanyName === "SIC"));
@@ -442,7 +479,7 @@ function computeDerived(rows, entry) {
     const sp = Number(r.SumPremium || 0);
     const sb = Number(r.SumBridgingPremium || 0);
     const avgBr = bc > 0 ? sb / bc : null;
-    return {
+    const out = {
       CompanyName: r.CompanyName,
       Quotes: q,
       SizePct: total.Quotes > 0 ? (q / total.Quotes) * 100 : null,
@@ -453,6 +490,11 @@ function computeDerived(rows, entry) {
       VsCompareCo: (avgBr != null && refCmpAvg != null && refCmpAvg > 0) ? (avgBr / refCmpAvg - 1) : null,
       VsSIC:       (avgBr != null && refSICAvg != null && refSICAvg > 0) ? (avgBr / refSICAvg - 1) : null,
     };
+    for (const c of COVERAGES) {
+      const sc = Number(r[`Sum${c}`] || 0);
+      out[`Avg${c}`] = q > 0 ? sc / q : null;
+    }
+    return out;
   });
 
   // Rankings by avg premium (ascending → rank 1 = cheapest).
@@ -502,6 +544,11 @@ function computeDerived(rows, entry) {
     VsCompareCo: (comparisonCo && refCmpAvg != null && refCmpAvg > 0) ? (exclAvg(comparisonCo) / refCmpAvg - 1) : null,
     VsSIC:       (refSICAvg != null && refSICAvg > 0) ? (exclAvg("SIC") / refSICAvg - 1) : null,
   } : null;
+  if (totalRow) {
+    for (const c of COVERAGES) {
+      totalRow[`Avg${c}`] = tq > 0 ? Number(total[`Sum${c}`] || 0) / tq : null;
+    }
+  }
 
   return { rows: derived, totalRow, total };
 }
@@ -575,10 +622,11 @@ function wireControls() {
     document.getElementById(id).addEventListener("change", refreshAll);
   }
 
-  // Discount Simulator: per-coverage inputs trigger a refresh on change/input.
+  // Discount Simulator: Total + per-coverage inputs trigger a refresh on change.
   // Clamp >100 on blur (the +100% cap).
-  for (const c of COVERAGES) {
-    const el = document.getElementById(`disc-${c}`);
+  const discIds = ["Total", ...COVERAGES];
+  for (const id of discIds) {
+    const el = document.getElementById(`disc-${id}`);
     if (!el) continue;
     el.addEventListener("change", () => {
       if (Number(el.value) > 100) el.value = "100";
@@ -586,8 +634,8 @@ function wireControls() {
     });
   }
   document.getElementById("disc-reset").addEventListener("click", () => {
-    for (const c of COVERAGES) {
-      const el = document.getElementById(`disc-${c}`);
+    for (const id of discIds) {
+      const el = document.getElementById(`disc-${id}`);
       if (el) el.value = "0";
     }
     refreshAll();
@@ -596,8 +644,8 @@ function wireControls() {
   document.getElementById("reset").addEventListener("click", async () => {
     await populateFiltersFromData();
     // Also reset discount inputs.
-    for (const c of COVERAGES) {
-      const el = document.getElementById(`disc-${c}`);
+    for (const id of discIds) {
+      const el = document.getElementById(`disc-${id}`);
       if (el) el.value = "0";
     }
     await refreshAll();

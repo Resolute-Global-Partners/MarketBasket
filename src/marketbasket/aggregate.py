@@ -234,3 +234,72 @@ def fetch_and_aggregate(
     if verbose:
         print(f"    -> aggregated to {len(agg):,} groupby rows   {time.perf_counter()-t0:6.1f}s", flush=True)
     return agg
+
+
+def fetch_and_aggregate_state(
+    state: str, months: list[str], *, verbose: bool = True,
+) -> list[pd.DataFrame]:
+    """Pull 4 tables ONCE for a state across many months, then aggregate each
+    month locally. Each table is one full-table scan instead of N — ~10-15x
+    faster than the per-(state, month) loop on scan-dominated workloads.
+
+    Returns a list of per-month aggregates (one DataFrame per month, in input
+    order). Empty months are skipped.
+    """
+    if not months:
+        return []
+    if verbose:
+        print(f"  {state} (batched: {len(months)} months {months[0]}..{months[-1]}):", flush=True)
+
+    t0 = time.perf_counter()
+    rate_all = sql.fetch_rate_state(state, months)
+    if verbose:
+        print(f"    fact_Rate           {len(rate_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+
+    t0 = time.perf_counter()
+    car_all = sql.fetch_car_state(state, months)
+    if verbose:
+        print(f"    fact_Rate_Car       {len(car_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+
+    t0 = time.perf_counter()
+    drv_all = sql.fetch_driver_state(state, months)
+    if verbose:
+        print(f"    fact_Rate_Driver    {len(drv_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+
+    t0 = time.perf_counter()
+    viol_all = sql.fetch_violation_state(state, months)
+    if verbose:
+        print(f"    fact_Rate_Violation {len(viol_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+
+    # Year_Month came back as a string column. Build per-month indices once.
+    for df in (rate_all, car_all, drv_all):
+        df["Year_Month"] = df["Year_Month"].astype(str).str.strip()
+
+    # fact_Rate_Violation joins drivers via RateDriverLinkId; we only need
+    # rows whose drivers fell into our months. Filter via Year_Month if
+    # present (the join key is per-driver, so the column is duplicated).
+    if "Year_Month" in viol_all.columns:
+        viol_all["Year_Month"] = viol_all["Year_Month"].astype(str).str.strip()
+
+    out: list[pd.DataFrame] = []
+    for m in months:
+        rate_m = rate_all[rate_all["Year_Month"] == m].drop(columns=["Year_Month"])
+        if rate_m.empty:
+            if verbose:
+                print(f"    {m}: no fact_Rate rows", flush=True)
+            continue
+        car_m  = car_all[car_all["Year_Month"] == m].drop(columns=["Year_Month"])
+        drv_m  = drv_all[drv_all["Year_Month"] == m].drop(columns=["Year_Month"])
+        viol_m = (
+            viol_all[viol_all["Year_Month"] == m].drop(columns=["Year_Month"])
+            if "Year_Month" in viol_all.columns else viol_all
+        )
+
+        t0 = time.perf_counter()
+        agg = _aggregate_one_state(state, m, rate_m, car_m, drv_m, viol_m)
+        if verbose:
+            print(f"    {m}: {len(rate_m):>7,} rate -> {len(agg):>7,} groupby rows   {time.perf_counter()-t0:6.1f}s",
+                  flush=True)
+        if not agg.empty:
+            out.append(agg)
+    return out
