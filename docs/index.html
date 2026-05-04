@@ -120,20 +120,24 @@
   <!-- Discount Simulator (collapsible) -->
   <details id="discount-panel" class="discount-panel">
     <summary>Discount Simulator <span class="hint">— applied only to highlighted reference companies</span></summary>
-    <div class="discount-grid">
+    <div class="discount-row disc-row-total">
       <div class="control disc-total"><label for="disc-Total">Total %</label><input type="number" id="disc-Total" min="-1000" max="100" step="1" value="0"></div>
+      <button id="disc-reset" type="button" class="disc-reset-btn">Reset all to 0%</button>
+    </div>
+    <div class="discount-row disc-row-main">
+      <span class="disc-row-label">Main coverages <em>(95% of premium)</em></span>
       <div class="control"><label for="disc-LiabBI">Liab BI %</label><input type="number" id="disc-LiabBI" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-LiabPD">Liab PD %</label><input type="number" id="disc-LiabPD" min="-1000" max="100" step="1" value="0"></div>
-      <div class="control"><label for="disc-Comp">Comp %</label><input type="number" id="disc-Comp" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-Coll">Coll %</label><input type="number" id="disc-Coll" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-Comp">Comp %</label><input type="number" id="disc-Comp" min="-1000" max="100" step="1" value="0"></div>
+      <div class="control"><label for="disc-UninsBI">Unins BI %</label><input type="number" id="disc-UninsBI" min="-1000" max="100" step="1" value="0"></div>
+    </div>
+    <div class="discount-row disc-row-minor">
+      <span class="disc-row-label">Minor coverages <em>(under 5%)</em></span>
       <div class="control"><label for="disc-MedPay">MedPay %</label><input type="number" id="disc-MedPay" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-UIMBI">UIM BI %</label><input type="number" id="disc-UIMBI" min="-1000" max="100" step="1" value="0"></div>
       <div class="control"><label for="disc-UIMPD">UIM PD %</label><input type="number" id="disc-UIMPD" min="-1000" max="100" step="1" value="0"></div>
-      <div class="control"><label for="disc-UninsBI">Uninsured BI %</label><input type="number" id="disc-UninsBI" min="-1000" max="100" step="1" value="0"></div>
-      <div class="control"><label for="disc-UninsPD">Uninsured PD %</label><input type="number" id="disc-UninsPD" min="-1000" max="100" step="1" value="0"></div>
-      <div class="control discount-actions">
-        <button id="disc-reset" type="button">Reset all to 0%</button>
-      </div>
+      <div class="control"><label for="disc-UninsPD">Unins PD %</label><input type="number" id="disc-UninsPD" min="-1000" max="100" step="1" value="0"></div>
     </div>
     <p class="hint">Total stacks additively with per-coverage. Positive = discount, negative = price increase. Capped at +100%; adjusted premium floored at 0.</p>
   </details>

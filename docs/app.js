@@ -311,6 +311,37 @@ function adjustedSumPremiumSQL(disc, ourCompanies) {
   return `CASE WHEN CompanyName IN (${inList}) THEN GREATEST(SumPremium - (${subtract}), 0) ELSE SumPremium END`;
 }
 
+/**
+ * Per-row scaled per-coverage BRIDGING premium.
+ *
+ * The parquet stores per-coverage SUMs across all quotes (Sum<C>Premium) and
+ * total bridging premium (SumBridgingPremium), but no per-coverage bridging
+ * sums. Approximate by scaling each coverage by the in-cell bridge ratio
+ * (SumBridgingPremium / SumPremium). Within a tight groupby cell the coverage
+ * mix is roughly uniform, so this tracks the true per-coverage bridging
+ * premium closely.
+ *
+ * Discounts (Total + per-coverage) are applied on top, only for our
+ * companies. Floored at 0.
+ */
+function scaledBridgingCoverageSQL(coverage, disc, ourCompanies) {
+  // bridge_share = SumBridgingPremium / SumPremium  (0 if SumPremium=0)
+  const share = `CASE WHEN SumPremium > 0 THEN SumBridgingPremium / SumPremium ELSE 0 END`;
+  const baseBridge = `(Sum${coverage}Premium * (${share}))`;
+
+  const isOurs = ourCompanies && ourCompanies.length > 0
+    ? `CompanyName IN (${ourCompanies.map(c => `'${c.replace(/'/g, "''")}'`).join(",")})`
+    : "1=0";
+
+  if (!anyDiscountActive(disc)) return baseBridge;
+
+  const totalFactor = 1 - (disc.total / 100);
+  const covFactor = 1 - (disc.coverages[coverage] / 100);
+  // Additive stacking: subtract total% AND coverage% of the bridging-coverage value.
+  const adjusted = `GREATEST(${baseBridge} * (${totalFactor} + ${covFactor} - 1), 0)`;
+  return `CASE WHEN ${isOurs} THEN ${adjusted} ELSE ${baseBridge} END`;
+}
+
 // ─── grid ──────────────────────────────────────────────────────────────────
 
 function buildGrid(entry) {
@@ -358,13 +389,15 @@ function buildGrid(entry) {
 
   // Per-coverage avg breakdown — 9 columns at the far right.
   // Header label is friendlier than the raw column id.
+  // Values are AVG-PER-BRIDGED-POLICY (Sum<C>Bridging / BridgingCount), with
+  // discounts applied for our companies.
   const COV_LABELS = {
     LiabBI: "Liab BI", LiabPD: "Liab PD", Comp: "Comp", Coll: "Coll",
     MedPay: "MedPay", UIMBI: "UIM BI", UIMPD: "UIM PD",
     UninsBI: "Unins BI", UninsPD: "Unins PD",
   };
   for (const c of COVERAGES) {
-    cols.push({ ...COL, field: `Avg${c}`, headerName: `Avg\n${COV_LABELS[c]}`,
+    cols.push({ ...COL, field: `Avg${c}`, headerName: `Avg Bridging\n${COV_LABELS[c]}`,
       valueFormatter: fmtDollar, cellClass: "cell-coverage" });
   }
 
@@ -410,10 +443,13 @@ async function refreshAll() {
   // Cast sums to DOUBLE so JS gets regular numbers, not BigInt.
   // SUM on INT returns BIGINT, which comes through as BigInt in JS and
   // breaks arithmetic (e.g. bigint / bigint = integer division → 0).
-  // Per-coverage sums are unadjusted — the breakdown columns reflect the
-  // raw average policy mix, independent of the Discount Simulator.
+  //
+  // Per-coverage breakdown (SumCBridging) is computed AFTER bridging — each
+  // coverage is scaled by the in-cell bridge ratio, then discounted (Total +
+  // per-coverage stack) for our companies. Yields avg-per-bridged-policy in
+  // computeDerived.
   const coverageSelects = COVERAGES
-    .map(c => `CAST(SUM(Sum${c}Premium) AS DOUBLE) AS Sum${c}`)
+    .map(c => `CAST(SUM(${scaledBridgingCoverageSQL(c, disc, ourCompanies)}) AS DOUBLE) AS Sum${c}Bridging`)
     .join(",\n            ");
   const aggRows = await sqlRows(`
     SELECT  CompanyName,
@@ -436,7 +472,7 @@ async function refreshAll() {
         CompanyName: c,
         Quotes: 0, SumPremium: 0, BridgingCount: 0, SumBridgingPremium: 0,
       };
-      for (const cov of COVERAGES) filler[`Sum${cov}`] = 0;
+      for (const cov of COVERAGES) filler[`Sum${cov}Bridging`] = 0;
       aggRows.push(filler);
     }
   }
@@ -462,11 +498,11 @@ function computeDerived(rows, entry) {
     a.SumPremium         += Number(r.SumPremium || 0);
     a.BridgingCount      += Number(r.BridgingCount || 0);
     a.SumBridgingPremium += Number(r.SumBridgingPremium || 0);
-    for (const c of COVERAGES) a[`Sum${c}`] += Number(r[`Sum${c}`] || 0);
+    for (const c of COVERAGES) a[`Sum${c}Bridging`] += Number(r[`Sum${c}Bridging`] || 0);
     return a;
   }, (() => {
     const init = { Quotes: 0, SumPremium: 0, BridgingCount: 0, SumBridgingPremium: 0 };
-    for (const c of COVERAGES) init[`Sum${c}`] = 0;
+    for (const c of COVERAGES) init[`Sum${c}Bridging`] = 0;
     return init;
   })());
 
@@ -490,9 +526,11 @@ function computeDerived(rows, entry) {
       VsCompareCo: (avgBr != null && refCmpAvg != null && refCmpAvg > 0) ? (avgBr / refCmpAvg - 1) : null,
       VsSIC:       (avgBr != null && refSICAvg != null && refSICAvg > 0) ? (avgBr / refSICAvg - 1) : null,
     };
+    // Avg<C> is per-BRIDGED-policy (sum of bridging coverage / bridging count).
+    // sc is already discount-adjusted in SQL for our companies.
     for (const c of COVERAGES) {
-      const sc = Number(r[`Sum${c}`] || 0);
-      out[`Avg${c}`] = q > 0 ? sc / q : null;
+      const sc = Number(r[`Sum${c}Bridging`] || 0);
+      out[`Avg${c}`] = bc > 0 ? sc / bc : null;
     }
     return out;
   });
@@ -546,7 +584,7 @@ function computeDerived(rows, entry) {
   } : null;
   if (totalRow) {
     for (const c of COVERAGES) {
-      totalRow[`Avg${c}`] = tq > 0 ? Number(total[`Sum${c}`] || 0) / tq : null;
+      totalRow[`Avg${c}`] = tbc > 0 ? Number(total[`Sum${c}Bridging`] || 0) / tbc : null;
     }
   }
 

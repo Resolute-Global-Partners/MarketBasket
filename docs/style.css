@@ -166,19 +166,37 @@ header h1 {
   margin-left: 6px;
 }
 .discount-panel[open] { padding-bottom: 14px; }
-.discount-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 10px 14px;
+.discount-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
   margin-top: 10px;
+  flex-wrap: wrap;
 }
-/* Total Discount sits first; tinted to call attention to the bulk control. */
-.discount-grid .disc-total label { color: var(--accent); font-weight: 600; }
-.discount-grid .disc-total input[type="number"] {
-  border-color: var(--accent-2);
-  background: #f5f8ff;
+.disc-row-label {
+  flex: 0 0 160px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  font-weight: 600;
+  padding-bottom: 9px;
 }
-.discount-grid input[type="number"] {
+.disc-row-label em {
+  display: block;
+  font-style: normal;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.discount-row .control {
+  min-width: 120px;
+  flex: 1 1 120px;
+  max-width: 180px;
+}
+.discount-row input[type="number"] {
   padding: 7px 10px;
   font-size: 13px;
   border: 1px solid #cbd5e1;
@@ -189,15 +207,20 @@ header h1 {
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
-.discount-grid input[type="number"]:focus {
+.discount-row input[type="number"]:focus {
   outline: none;
   border-color: var(--accent-2);
   box-shadow: 0 0 0 3px rgba(37,99,235,.18);
 }
-.discount-grid .discount-actions {
-  justify-content: flex-end;
+/* Total row: the Total input gets the accent treatment; reset button on the right. */
+.disc-row-total .disc-total label { color: var(--accent); font-weight: 600; }
+.disc-row-total .disc-total input[type="number"] {
+  border-color: var(--accent-2);
+  background: #f5f8ff;
 }
-.discount-grid .discount-actions button {
+.disc-row-total .disc-total { flex: 0 0 200px; max-width: 200px; }
+.disc-reset-btn {
+  margin-left: auto;
   padding: 7px 14px;
   font-size: 13px;
   border: 1px solid #cbd5e1;
@@ -205,11 +228,10 @@ header h1 {
   background: white;
   cursor: pointer;
   font-family: inherit;
-  margin-top: 14px;
 }
-.discount-grid .discount-actions button:hover { background: #f1f5f9; border-color: #94a3b8; }
+.disc-reset-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
 .discount-panel .hint {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   font-size: 11px;
   color: var(--muted);
 }
