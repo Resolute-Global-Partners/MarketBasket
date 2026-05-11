@@ -28,7 +28,8 @@ from . import sql
 from .aggregate import fetch_and_aggregate, fetch_and_aggregate_state
 from .config import (
     ACTIVE_STATES, COMPANY_MAP_BY_STATE, COMPARISON_COMPANY_BY_STATE,
-    GROUP_COLS, OUR_COMPANIES_BY_STATE,
+    CREDIT_CODE_ORDER, CREDIT_FORMULA_BY_STATE, GROUP_COLS,
+    OUR_COMPANIES_BY_STATE, VALID_LIAB_BY_STATE,
 )
 from .preprocess import (
     apply_county_top_n_on_aggregated, apply_top_n_on_aggregated,
@@ -94,7 +95,13 @@ def merge_and_write(
 ) -> dict | None:
     """Combine existing + new monthly chunks, bucket, write, return index entry."""
     keep = existing[~existing["YYYYMM"].isin(replaced_months)] if not existing.empty else existing
-    combined = pd.concat([keep] + new_chunks, ignore_index=True)
+    # Drop columns from older parquet schemas that no longer exist (e.g. CreditBin
+    # was replaced by CreditCode in 2026-05). Otherwise pd.concat would carry
+    # them through as NaN into the new aggregate.
+    legacy_cols = ["CreditBin"]
+    keep = keep.drop(columns=[c for c in legacy_cols if c in keep.columns], errors="ignore")
+    parts = [k for k in [keep] if not k.empty] + new_chunks
+    combined = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
     if combined.empty:
         return None
 
@@ -111,12 +118,27 @@ def merge_and_write(
 
     counties = sorted(combined["County"].dropna().unique().tolist()) if "County" in combined.columns else []
 
+    # Letter codes ordered per CREDIT_CODE_ORDER, only those actually present.
+    if "CreditCode" in combined.columns:
+        seen_codes = set(combined["CreditCode"].dropna().unique().tolist())
+        credit_codes = [c for c in CREDIT_CODE_ORDER if c in seen_codes]
+    else:
+        credit_codes = []
+
+    # Liab limits actually accepted by this state (mirrors VALID_LIAB_BY_STATE
+    # so the frontend dropdown shows the right floor — 25/50 vs 30/60).
+    liab_map = VALID_LIAB_BY_STATE.get(state, {})
+    liab_limits = list(liab_map.values())
+
     return {
         "state": state,
         "rows": int(len(combined)),
         "months": sorted(int(m) for m in combined["YYYYMM"].unique()),
         "companies": sorted(combined["CompanyName"].unique().tolist()),
         "counties": counties,
+        "credit_codes": credit_codes,
+        "liab_limits": liab_limits,
+        "has_credit_formula": state in CREDIT_FORMULA_BY_STATE,
         "curated": state in COMPANY_MAP_BY_STATE,
         "comparison_company": COMPARISON_COMPANY_BY_STATE.get(state),
         "our_companies": OUR_COMPANIES_BY_STATE.get(state, []),

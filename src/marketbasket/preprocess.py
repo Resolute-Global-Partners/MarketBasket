@@ -21,6 +21,7 @@ from .config import (
     TOP_14_PLANS,
     TOP_N_NON_CURATED,
     VALID_LIAB,
+    VALID_LIAB_BY_STATE,
 )
 
 
@@ -96,10 +97,11 @@ def _normalize_county(s: pd.Series) -> pd.Series:
     return out.replace(_COUNTY_SYNONYMS)
 
 
-def preprocess_car(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess_car(df: pd.DataFrame, state: str) -> pd.DataFrame:
     """fact_Rate_Car → one row per RateLinkID.
 
-    1. Drop RateLinkIDs where ANY car has an invalid LiabLimits (not in {25/50, 50/100, 100/300}).
+    1. Drop RateLinkIDs where ANY car has invalid LiabLimits (not in the state's
+       accepted tier set — TX uses 30/60 as the floor; everywhere else 25/50).
     2. Normalize County: uppercase, strip non-letters, apply synonyms; empty -> "UNKNOWN".
     3. Aggregate: LiabLimits/County (first car), NumVehicles, Year (max),
        coverage premiums (sum).
@@ -108,8 +110,9 @@ def preprocess_car(df: pd.DataFrame) -> pd.DataFrame:
     both for YearBin and for the PredictedCredit "Vehicle Min Age Range".
     """
     df = df.copy()
+    valid_liab = VALID_LIAB_BY_STATE.get(state, VALID_LIAB)
     df["LiabLimits"] = list(zip(df["LiabLimits1"], df["LiabLimits2"]))
-    df["LiabLimits"] = df["LiabLimits"].map(VALID_LIAB)
+    df["LiabLimits"] = df["LiabLimits"].map(valid_liab)
     invalid_ids = df[df["LiabLimits"].isna()]["RateLinkID"].unique()
     df = df[~df["RateLinkID"].isin(invalid_ids)]
 
@@ -295,6 +298,9 @@ AGG_VALUE_COLS: list[str] = [
     "SumLiabBIPremium", "SumLiabPDPremium", "SumCompPremium", "SumCollPremium",
     "SumMedPayPremium", "SumUIMBIPremium", "SumUIMPDPremium",
     "SumUninsBIPremium", "SumUninsPDPremium",
+    "SumLiabBIBridging", "SumLiabPDBridging", "SumCompBridging", "SumCollBridging",
+    "SumMedPayBridging", "SumUIMBIBridging", "SumUIMPDBridging",
+    "SumUninsBIBridging", "SumUninsPDBridging",
 ]
 
 

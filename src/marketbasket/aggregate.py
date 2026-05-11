@@ -18,12 +18,11 @@ import pandas as pd
 
 from . import sql
 from .config import (
-    CREDIT_AGE_BANDS, CREDIT_BASE_SCORE, CREDIT_BI_LIMITS_PTS, CREDIT_BIN_SIZE,
-    CREDIT_CARRIER_PTS, CREDIT_CARRIER_STATE_LAPSE,
-    CREDIT_CARRIER_STATE_NO_LAPSE, CREDIT_CARRIER_STATE_NO_PC,
-    CREDIT_FORMULA_STATES, CREDIT_HOMEOWNER_PTS, CREDIT_VEHCOUNT_PTS,
-    GROUP_COLS, PAYPLAN_LABELS, PREM_BIN_CAP, PREM_BIN_SIZE, PREM_COLS,
-    YEAR_BINS, YEAR_LABELS,
+    CREDIT_CARRIER_STATE_LAPSE, CREDIT_CARRIER_STATE_NO_LAPSE,
+    CREDIT_CARRIER_STATE_NO_PC, CREDIT_CODE_MAP_IL_V2, CREDIT_CODE_MAP_V1,
+    CREDIT_FORMULA_BY_STATE, CREDIT_FORMULA_STATES, GROUP_COLS,
+    IL_CREDIT_CODE_CUTOFF, PAYPLAN_LABELS, PREM_BIN_CAP, PREM_BIN_SIZE,
+    PREM_COLS, YEAR_BINS, YEAR_LABELS,
 )
 from .preprocess import (
     preprocess_car,
@@ -47,8 +46,20 @@ def _cap_vehicles(n) -> str:
     return str(n)
 
 
-def _compute_predicted_credit(df: pd.DataFrame) -> pd.Series:
-    """Row-level PredictedCredit per the IL/AZ formula. Vectorized.
+def _band_pts(values: pd.Series, bands: list[tuple[int, int, int]]) -> pd.Series:
+    """For each value, find which (lo, hi, pts) band it falls in. 0 outside all
+    bands — IN/NM/TN intentionally leave a gap at vehicle min age = 9.
+    """
+    pts = pd.Series(0, index=values.index, dtype="float64")
+    for lo, hi, p in bands:
+        in_band = (values >= lo) & (values <= hi)
+        pts.loc[in_band] = p
+    return pts
+
+
+def _compute_predicted_credit(df: pd.DataFrame, state: str) -> pd.Series:
+    """Row-level PredictedCredit using the per-state formula in
+    CREDIT_FORMULA_BY_STATE. Vectorized.
 
     Inputs (must already be on df):
         PriorInsurance      int 0/1
@@ -58,12 +69,17 @@ def _compute_predicted_credit(df: pd.DataFrame) -> pd.Series:
         RatedDate           datetime
         NamedInsuredAge     int
         ResidencyStatus     str ('O' = own = homeowner)
-        LiabLimits          str ('25/50' | '50/100' | '100/300')
+        LiabLimits          str ('25/50' | '30/60' | '50/100' | '100/300')
         NumVehicles         str ('1'..'5+')
 
-    Returns a Series of integer scores (NaN for rows missing inputs).
+    Returns a Series of integer scores (NaN for rows missing inputs OR for
+    states without a registered formula).
     """
-    score = pd.Series(CREDIT_BASE_SCORE, index=df.index, dtype="float64")
+    formula = CREDIT_FORMULA_BY_STATE.get(state)
+    if formula is None:
+        return pd.Series(pd.NA, index=df.index, dtype="Int64")
+
+    score = pd.Series(formula["base"], index=df.index, dtype="float64")
 
     # ── Prior Carrier / Lapse state ──────────────────────────────────────────
     pi = df["PriorInsurance"].fillna(0).astype(int)
@@ -72,46 +88,33 @@ def _compute_predicted_credit(df: pd.DataFrame) -> pd.Series:
     carrier_state.loc[(pi == 1) & (lapse == 0)] = CREDIT_CARRIER_STATE_NO_LAPSE
     carrier_state.loc[(pi == 1) & (lapse > 0)]  = CREDIT_CARRIER_STATE_LAPSE
 
-    score += carrier_state.map(CREDIT_CARRIER_PTS).astype("float64")
+    score += carrier_state.map(formula["carrier"]).astype("float64")
 
     # ── Prior Duration pts ───────────────────────────────────────────────────
-    # NO PC → treat as 0 months (falls in 0-5 bucket → -50). Else use PriorMonthsCovg.
+    # NO PC → treat as 0 months (falls in 0-5 band).
     months = df["PriorMonthsCovg"].where(pi == 1, 0).fillna(0).clip(lower=0)
-    dur_pts = pd.Series(0, index=df.index, dtype="float64")
-    dur_pts.loc[months <= 5]                   = -50
-    dur_pts.loc[(months >= 6) & (months <= 12)] = 0
-    dur_pts.loc[months > 12]                    = 70
-    score += dur_pts
+    score += _band_pts(months, formula["prior_duration"])
 
     # ── Vehicle Min Age pts ──────────────────────────────────────────────────
     rated_year = df["RatedDate"].dt.year
     min_age = (rated_year - df["Year"]).clip(lower=0)
-    vma_pts = pd.Series(0, index=df.index, dtype="float64")
-    vma_pts.loc[min_age < 3]                  = 110
-    vma_pts.loc[(min_age >= 3) & (min_age <= 9)] = 35
-    vma_pts.loc[min_age >= 10]                = -40
-    score += vma_pts
+    score += _band_pts(min_age, formula["vehicle_min_age"])
 
     # ── Named Insured Age × carrier-state matrix ─────────────────────────────
     age = df["NamedInsuredAge"].fillna(-1)
     age_pts = pd.Series(0, index=df.index, dtype="float64")
-    for lo, hi, mapping in CREDIT_AGE_BANDS:
+    for lo, hi, mapping in formula["age_bands"]:
         in_band = (age >= lo) & (age <= hi)
         for cs_name, pts in mapping.items():
             age_pts.loc[in_band & (carrier_state == cs_name)] = pts
     score += age_pts
 
-    # ── BI Limits pts ────────────────────────────────────────────────────────
-    score += df["LiabLimits"].map(CREDIT_BI_LIMITS_PTS).fillna(0).astype("float64")
+    # ── BI Limits / Vehicle Count / Homeowner ───────────────────────────────
+    score += df["LiabLimits"].map(formula["bi_limits"]).fillna(0).astype("float64")
+    score += df["NumVehicles"].map(formula["veh_count"]).fillna(0).astype("float64")
+    score += (df["ResidencyStatus"] == "O").astype("float64") * formula["homeowner_true"]
 
-    # ── Vehicle Count pts ────────────────────────────────────────────────────
-    score += df["NumVehicles"].map(CREDIT_VEHCOUNT_PTS).fillna(0).astype("float64")
-
-    # ── Homeowner pts ────────────────────────────────────────────────────────
-    homeowner_pts = (df["ResidencyStatus"] == "O").astype("float64") * CREDIT_HOMEOWNER_PTS
-    score += homeowner_pts
-
-    # Rows missing critical inputs → NaN (so they don't pollute CreditBin).
+    # Rows missing critical inputs → NaN.
     valid = (
         df["NamedInsuredAge"].notna()
         & df["LiabLimits"].notna()
@@ -122,10 +125,40 @@ def _compute_predicted_credit(df: pd.DataFrame) -> pd.Series:
     return score.where(valid).round().astype("Int64")
 
 
-def _credit_bin(score: pd.Series) -> pd.Series:
-    """Bucket PredictedCredit into 50-pt floors. NaN preserved."""
-    floored = (score // CREDIT_BIN_SIZE) * CREDIT_BIN_SIZE
-    return floored.astype("Int64")
+def _bucket_to_code(scores: pd.Series, code_map: list[tuple[int, int, str]]) -> pd.Series:
+    """Map numeric scores to letter codes via a (lo, hi, code) lookup table.
+    NaN preserved.
+    """
+    import numpy as np
+    if scores.isna().all():
+        return pd.Series(pd.NA, index=scores.index, dtype="object")
+    boundaries = np.array([entry[1] for entry in code_map])
+    labels = np.array([entry[2] for entry in code_map])
+    # searchsorted with default side='left': first index where boundary >= value.
+    filled = scores.fillna(-1).to_numpy()
+    idx = np.searchsorted(boundaries, filled, side="left")
+    idx = np.clip(idx, 0, len(labels) - 1)
+    out = pd.Series(labels[idx], index=scores.index, dtype="object")
+    out[scores.isna()] = pd.NA
+    return out
+
+
+def _assign_credit_code(
+    scores: pd.Series, dates: pd.Series, state: str,
+) -> pd.Series:
+    """Compute CreditCode per row. IL has a date-dependent split (V1 before
+    2026-04-02, V2 on/after). All other states use V1.
+    """
+    if state == "IL":
+        cutoff = pd.Timestamp(IL_CREDIT_CODE_CUTOFF)
+        is_v2 = dates >= cutoff
+        result = pd.Series(pd.NA, index=scores.index, dtype="object")
+        if (~is_v2).any():
+            result.loc[~is_v2] = _bucket_to_code(scores[~is_v2], CREDIT_CODE_MAP_V1)
+        if is_v2.any():
+            result.loc[is_v2] = _bucket_to_code(scores[is_v2], CREDIT_CODE_MAP_IL_V2)
+        return result
+    return _bucket_to_code(scores, CREDIT_CODE_MAP_V1)
 
 
 def _aggregate_one_state(
@@ -146,7 +179,7 @@ def _aggregate_one_state(
 
     if car.empty:
         return pd.DataFrame()
-    car = preprocess_car(car)
+    car = preprocess_car(car, state)
 
     if not drv.empty:
         if viol.empty:
@@ -175,15 +208,29 @@ def _aggregate_one_state(
     df["_bridge_prem"] = (
         df["TotalPremium"].where(df["PurchasedFinal"] == 1, 0).fillna(0)
     )
+    # Per-coverage bridging premium — exact mirror of _bridge_prem, one per
+    # coverage column. Lets the frontend report avg <C> per bridged policy
+    # without scaling-by-ratio approximation.
+    bridged = df["PurchasedFinal"] == 1
+    for col in PREM_COLS:
+        df[f"_bridge_{col}"] = df[col].where(bridged, 0).fillna(0)
 
-    # PredictedCredit + CreditBin (only for states with a credit formula).
+    # PredictedCredit + CreditCode (only for states with a credit formula).
+    # CreditCode is the letter grade (A..Z with skips). For IL, the bucketing
+    # changes on 2026-04-02 so we pass RatedDate to the assigner.
     if state in CREDIT_FORMULA_STATES:
-        df["PredictedCredit"] = _compute_predicted_credit(df)
-        df["CreditBin"] = _credit_bin(df["PredictedCredit"])
+        df["PredictedCredit"] = _compute_predicted_credit(df, state)
+        df["CreditCode"] = _assign_credit_code(df["PredictedCredit"], df["RatedDate"], state)
     else:
-        df["CreditBin"] = pd.Series([pd.NA] * len(df), dtype="Int64")
+        df["CreditCode"] = pd.Series([pd.NA] * len(df), dtype="object")
 
     coverage_aggs = {f"Sum{col}": (col, "sum") for col in PREM_COLS}
+    # SumLiabBIBridging, SumLiabPDBridging, ... — naming matches what the
+    # frontend already expects (Sum<C>Bridging without the "Premium" suffix).
+    coverage_bridge_aggs = {
+        f"Sum{col[:-len('Premium')]}Bridging": (f"_bridge_{col}", "sum")
+        for col in PREM_COLS
+    }
 
     agg = (
         df.groupby(GROUP_COLS, dropna=False)
@@ -193,6 +240,7 @@ def _aggregate_one_state(
               BridgingCount=("PurchasedFinal", "sum"),
               SumBridgingPremium=("_bridge_prem", "sum"),
               **coverage_aggs,
+              **coverage_bridge_aggs,
           )
           .reset_index()
     )

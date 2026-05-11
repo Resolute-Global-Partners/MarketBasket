@@ -8,10 +8,14 @@ import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 
 const PREM_BIN_SIZE = 500;
 const PREM_BIN_CAP  = 5000;
-const CREDIT_BIN_SIZE = 50;
-const CREDIT_BIN_MIN = 600;
-const CREDIT_BIN_MAX = 1750;
 const YEAR_LABELS   = ["pre-2010", "2010-2014", "2015-2019", "2020+"];
+
+// Canonical letter-grade order for the Credit Code filter. Skips N/O/R/T/X/Y.
+// Matches CREDIT_CODE_ORDER in src/marketbasket/config.py.
+const CREDIT_CODE_ORDER = [
+  "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
+  "K", "L", "M", "P", "Q", "S", "U", "V", "W", "Z",
+];
 
 // Coverage IDs match Sum<Id>Premium columns in the parquet, and disc-<Id> input IDs.
 const COVERAGES = [
@@ -27,7 +31,9 @@ const PAYPLAN_ORDER = [
   "50% down, 2 payments", "Full pay",
 ];
 
-const LIAB_ORDER = ["25/50", "50/100", "100/300"];
+// Default liab order if a state's index entry doesn't specify. Most states use
+// 25/50 as the floor; TX uses 30/60 (the index will override).
+const LIAB_ORDER_DEFAULT = ["25/50", "50/100", "100/300"];
 
 // ─── state ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +41,9 @@ const app = {
   db: null, conn: null, index: null,
   currentState: null, grid: null,
   lastRows: null, lastTotalRow: null,
+  // True when the current parquet has Sum<C>Bridging columns. Older parquets
+  // don't, and we fall back to a scaling approximation.
+  hasExactBridging: false,
 };
 
 init().catch(err => {
@@ -100,11 +109,30 @@ async function loadState(stateCode) {
   await app.conn.query(`CREATE VIEW mb AS SELECT * FROM read_parquet('${fname}')`);
 
   app.currentState = stateCode;
+  // Probe the parquet schema once so refreshAll knows which path to take.
+  app.hasExactBridging = await detectExactBridging();
   await populateFiltersFromData();
   buildGrid(entry);
   await refreshAll();
 
   setStatus(`${stateCode} ready`);
+}
+
+/**
+ * Check whether the currently-loaded `mb` view has the per-coverage bridging
+ * columns (SumLiabBIBridging etc.). When present, we report exact values;
+ * when absent (older parquet), fall back to scaling SumCPremium by the
+ * SumBridgingPremium/SumPremium ratio.
+ */
+async function detectExactBridging() {
+  try {
+    const rows = await sqlRows(`PRAGMA table_info('mb')`);
+    const names = new Set(rows.map(r => r.name));
+    return COVERAGES.every(c => names.has(`Sum${c}Bridging`));
+  } catch (e) {
+    console.warn("schema probe failed", e);
+    return false;
+  }
 }
 
 // ─── dropdowns ─────────────────────────────────────────────────────────────
@@ -159,7 +187,11 @@ async function populateFiltersFromData() {
   setOptions("prem-min", prem, 0);
   setOptions("prem-max", prem, PREM_BIN_CAP + PREM_BIN_SIZE);
 
-  setOptions("liab", ["Any", ...LIAB_ORDER], "Any");
+  // Liab Limits: state-specific floor (TX uses 30/60, others 25/50).
+  const liabOrder = (Array.isArray(entry.liab_limits) && entry.liab_limits.length)
+    ? entry.liab_limits
+    : LIAB_ORDER_DEFAULT;
+  setOptions("liab", ["Any", ...liabOrder], "Any");
 
   let ppPresent = new Set();
   try {
@@ -177,11 +209,19 @@ async function populateFiltersFromData() {
   setOptions("prior-insurance", ["Any", "No", "Yes"], "Any");
   setOptions("year-bin", ["Any", ...YEAR_LABELS], "Any");
 
-  // Credit min/max: 50-pt buckets from CREDIT_BIN_MIN to CREDIT_BIN_MAX.
-  const creditBins = [];
-  for (let v = CREDIT_BIN_MIN; v <= CREDIT_BIN_MAX; v += CREDIT_BIN_SIZE) creditBins.push(v);
-  setOptions("credit-min", creditBins, CREDIT_BIN_MIN);
-  setOptions("credit-max", creditBins, CREDIT_BIN_MAX);
+  // Credit Code: letter-grade pickers (A..Z with skips). Order is canonical;
+  // we only show codes actually present in the state's data. Hide both rows
+  // entirely when the state has no credit formula.
+  const codes = Array.isArray(entry.credit_codes) ? entry.credit_codes : [];
+  const ordered = CREDIT_CODE_ORDER.filter(c => codes.includes(c));
+  const creditRow = document.getElementById("credit-from")?.closest(".filter-row");
+  if (ordered.length === 0) {
+    if (creditRow) creditRow.style.display = "none";
+  } else {
+    if (creditRow) creditRow.style.display = "";
+    setOptions("credit-from", ordered, ordered[0]);
+    setOptions("credit-to",   ordered, ordered[ordered.length - 1]);
+  }
 
   // County: Any + actual counties present (from index entry, falls back to query).
   let counties = entry.counties || [];
@@ -213,8 +253,8 @@ function currentFilters() {
     dateTo:   parseInt(v("date-to"),   10),
     premMin:  parseInt(v("prem-min"),  10),
     premMax:  parseInt(v("prem-max"),  10),
-    creditMin: parseInt(v("credit-min"), 10),
-    creditMax: parseInt(v("credit-max"), 10),
+    creditFrom: v("credit-from"),
+    creditTo:   v("credit-to"),
     county:   v("county"),
     liab:     v("liab"),
     payplan:  v("payplan"),
@@ -256,11 +296,23 @@ function whereClause(f) {
   conds.push(`PremBin >= ${f.premMin}`);
   conds.push(`PremBin <  ${f.premMax}`);
   conds.push(`Term = ${f.term}`);
-  // Credit range: filters out NULL CreditBin rows when credit min/max moved off
-  // their defaults. When at default extremes, allow NULL through.
-  const creditAtDefault = (f.creditMin === CREDIT_BIN_MIN && f.creditMax === CREDIT_BIN_MAX);
-  if (!creditAtDefault) {
-    conds.push(`CreditBin IS NOT NULL AND CreditBin >= ${f.creditMin} AND CreditBin <= ${f.creditMax}`);
+  // Credit range: expand "From X To Y" into the slice of CREDIT_CODE_ORDER
+  // between them (inclusive). When the slice covers every code present in
+  // this state, skip the WHERE clause so NULL CreditCode rows pass through.
+  const entry = app.index.states[app.currentState];
+  const presentCodes = (entry && Array.isArray(entry.credit_codes)) ? entry.credit_codes : [];
+  if (presentCodes.length && f.creditFrom && f.creditTo) {
+    const ordered = CREDIT_CODE_ORDER.filter(c => presentCodes.includes(c));
+    const lo = ordered.indexOf(f.creditFrom);
+    const hi = ordered.indexOf(f.creditTo);
+    if (lo >= 0 && hi >= 0) {
+      const [a, b] = lo <= hi ? [lo, hi] : [hi, lo];
+      const slice = ordered.slice(a, b + 1);
+      if (slice.length < ordered.length) {
+        const inList = slice.map(c => `'${c}'`).join(",");
+        conds.push(`CreditCode IN (${inList})`);
+      }
+    }
   }
   if (f.county !== "Any") conds.push(`County = '${f.county.replace(/'/g, "''")}'`);
   if (f.liab    !== "Any") conds.push(`LiabLimits = '${f.liab}'`);
@@ -312,22 +364,21 @@ function adjustedSumPremiumSQL(disc, ourCompanies) {
 }
 
 /**
- * Per-row scaled per-coverage BRIDGING premium.
+ * Per-row per-coverage BRIDGING premium.
  *
- * The parquet stores per-coverage SUMs across all quotes (Sum<C>Premium) and
- * total bridging premium (SumBridgingPremium), but no per-coverage bridging
- * sums. Approximate by scaling each coverage by the in-cell bridge ratio
- * (SumBridgingPremium / SumPremium). Within a tight groupby cell the coverage
- * mix is roughly uniform, so this tracks the true per-coverage bridging
- * premium closely.
+ * If the parquet has Sum<C>Bridging columns (newer pipeline), those are exact
+ * — sums of per-coverage premium across rows where PurchasedFinal=1. Older
+ * parquets don't have them; fall back to scaling Sum<C>Premium by the in-cell
+ * bridge ratio (SumBridgingPremium / SumPremium). Within a tight groupby cell
+ * the coverage mix is roughly uniform, so the approximation tracks closely.
  *
  * Discounts (Total + per-coverage) are applied on top, only for our
  * companies. Floored at 0.
  */
-function scaledBridgingCoverageSQL(coverage, disc, ourCompanies) {
-  // bridge_share = SumBridgingPremium / SumPremium  (0 if SumPremium=0)
-  const share = `CASE WHEN SumPremium > 0 THEN SumBridgingPremium / SumPremium ELSE 0 END`;
-  const baseBridge = `(Sum${coverage}Premium * (${share}))`;
+function bridgingCoverageSQL(coverage, disc, ourCompanies, exactAvailable) {
+  const baseBridge = exactAvailable
+    ? `Sum${coverage}Bridging`
+    : `(Sum${coverage}Premium * (CASE WHEN SumPremium > 0 THEN SumBridgingPremium / SumPremium ELSE 0 END))`;
 
   const isOurs = ourCompanies && ourCompanies.length > 0
     ? `CompanyName IN (${ourCompanies.map(c => `'${c.replace(/'/g, "''")}'`).join(",")})`
@@ -449,7 +500,7 @@ async function refreshAll() {
   // per-coverage stack) for our companies. Yields avg-per-bridged-policy in
   // computeDerived.
   const coverageSelects = COVERAGES
-    .map(c => `CAST(SUM(${scaledBridgingCoverageSQL(c, disc, ourCompanies)}) AS DOUBLE) AS Sum${c}Bridging`)
+    .map(c => `CAST(SUM(${bridgingCoverageSQL(c, disc, ourCompanies, app.hasExactBridging)}) AS DOUBLE) AS Sum${c}Bridging`)
     .join(",\n            ");
   const aggRows = await sqlRows(`
     SELECT  CompanyName,
@@ -652,7 +703,7 @@ function wireControls() {
   const filterIds = [
     "date-from", "date-to", "prem-min", "prem-max",
     "liab", "payplan", "term", "market-provider",
-    "credit-min", "credit-max", "county",
+    "credit-from", "credit-to", "county",
     "non-owner", "num-drivers", "num-vehicles",
     "prior-insurance", "year-bin",
   ];
