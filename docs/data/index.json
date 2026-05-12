@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-11T21:30:06.438943+00:00",
+  "generated_at": "2026-05-12T01:42:23.325399+00:00",
   "source": "sql",
   "states": {
     "AZ": {
@@ -272,12 +272,15 @@
     },
     "TX": {
       "state": "TX",
-      "rows": 5351772,
+      "rows": 4381047,
       "months": [
         202509,
         202510,
         202511,
-        202512
+        202512,
+        202601,
+        202602,
+        202603
       ],
       "companies": [
         "Acacia",
@@ -310,30 +313,20 @@
         "United Auto"
       ],
       "counties": [
-        "BELL",
         "BEXAR",
-        "BRAZORIA",
-        "CAMERON",
         "COLLIN",
         "DALLAS",
         "DENTON",
-        "ECTOR",
         "ELPASO",
         "FORTBEND",
-        "GALVESTON",
         "HARRIS",
         "HIDALGO",
-        "JEFFERSON",
-        "LUBBOCK",
         "MONTGOMERY",
         "NUECES",
         "Other",
-        "SMITH",
         "TARRANT",
         "TRAVIS",
-        "UNKNOWN",
-        "WEBB",
-        "WILLIAMSON"
+        "UNKNOWN"
       ],
       "credit_codes": [
         "C",
