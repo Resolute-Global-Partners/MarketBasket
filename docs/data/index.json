@@ -272,7 +272,7 @@
     },
     "TX": {
       "state": "TX",
-      "rows": 5201516,
+      "rows": 5154550,
       "months": [
         202509,
         202510,
@@ -287,7 +287,6 @@
         "Acacia",
         "Aguila",
         "Alinsco",
-        "Allinsco",
         "Alpine Rio",
         "Amwins",
         "Anchor General",

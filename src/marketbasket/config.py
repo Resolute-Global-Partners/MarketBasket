@@ -56,7 +56,7 @@ COMPANY_MAP_TX: dict[int, str] = {
     10094447:   "Amwins",
     3873616:    "The General",
     2624660:    "Kemper Auto",
-    1073745427: "Allinsco",
+    1073745427: "Alinsco",
     1073745284: "Alinsco",
     8914786:    "Progressive",
     139071886:  "Falcon",
