@@ -170,7 +170,7 @@
     },
     "TN": {
       "state": "TN",
-      "rows": 1493971,
+      "rows": 1493057,
       "months": [
         202509,
         202510,
@@ -182,30 +182,20 @@
         202604
       ],
       "companies": [
-        "AAA",
         "Acceptance",
-        "Acuity Insurance",
         "Advantage Auto",
         "American Freedom",
-        "Auto-Owners",
         "Bristol West",
         "Dairyland",
         "GAINSCO",
-        "Grange Insurance",
         "Hallmark",
-        "Hartford",
         "National General",
-        "Nationwide",
         "Other",
         "Progressive",
-        "Safeco",
         "Safeway",
-        "Stillwater",
-        "Tennessee Auto Insurance Plan",
         "The General",
         "Trexis",
-        "UIC",
-        "Westfield Insurance"
+        "UIC"
       ],
       "counties": [
         "ANDERSON",
