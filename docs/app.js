@@ -427,6 +427,7 @@ function buildGrid(entry) {
     { ...COL, field: "BridgeRate",         headerName: "Bridge\nRate",         valueFormatter: fmtPct1 },
     { ...COL, field: "AvgBridgingPremium", headerName: "Avg Bridging\nPremium",valueFormatter: fmtDollar },
     { ...COL, field: "BridgeRank",         headerName: "Bridge\nRank",         valueFormatter: fmtInt },
+    { ...COL, field: "AvgPremiumDiff",     headerName: "Avg Premium\nDiff",    valueFormatter: fmtPctSign, cellClass: diffClass },
     { ...COL, field: "RankDiff",           headerName: "Rank\nDiff",           valueFormatter: fmtRankDiff, cellClass: diffClass },
   ];
   if (comparisonCo) {
@@ -566,14 +567,21 @@ function computeDerived(rows, entry) {
     const sp = Number(r.SumPremium || 0);
     const sb = Number(r.SumBridgingPremium || 0);
     const avgBr = bc > 0 ? sb / bc : null;
+    const avgPrem = q > 0 ? sp / q : null;
     const out = {
       CompanyName: r.CompanyName,
       Quotes: q,
       SizePct: total.Quotes > 0 ? (q / total.Quotes) * 100 : null,
       BridgingCount: bc,
       BridgeRate: q > 0 ? bc / q : null,
-      AvgPremium: q > 0 ? sp / q : null,
+      AvgPremium: avgPrem,
       AvgBridgingPremium: avgBr,
+      // (Written - Bridging) / Written: positive means bridging is cheaper
+      // than the average written quote (good — green); negative means the
+      // people who bridged paid more than the average quoter (bad — red).
+      AvgPremiumDiff: (avgPrem != null && avgPrem > 0 && avgBr != null)
+        ? (avgPrem - avgBr) / avgPrem
+        : null,
       VsCompareCo: (avgBr != null && refCmpAvg != null && refCmpAvg > 0) ? (avgBr / refCmpAvg - 1) : null,
       VsSIC:       (avgBr != null && refSICAvg != null && refSICAvg > 0) ? (avgBr / refSICAvg - 1) : null,
     };
@@ -620,6 +628,7 @@ function computeDerived(rows, entry) {
     return bc > 0 ? sb / bc : null;
   };
 
+  const totAvgPrem = tq > 0 ? tsp / tq : null;
   const totalRow = tq > 0 ? {
     _isTotal: true,
     CompanyName: "TOTAL",
@@ -628,8 +637,11 @@ function computeDerived(rows, entry) {
     SizePct: 100,
     BridgingCount: tbc,
     BridgeRate: tq > 0 ? tbc / tq : null,
-    AvgPremium: tq > 0 ? tsp / tq : null,
+    AvgPremium: totAvgPrem,
     AvgBridgingPremium: totAvgBr,
+    AvgPremiumDiff: (totAvgPrem != null && totAvgPrem > 0 && totAvgBr != null)
+      ? (totAvgPrem - totAvgBr) / totAvgPrem
+      : null,
     VsCompareCo: (comparisonCo && refCmpAvg != null && refCmpAvg > 0) ? (exclAvg(comparisonCo) / refCmpAvg - 1) : null,
     VsSIC:       (refSICAvg != null && refSICAvg > 0) ? (exclAvg("SIC") / refSICAvg - 1) : null,
   } : null;
