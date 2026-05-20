@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-12T01:42:23.325399+00:00",
+  "generated_at": "2026-05-20T10:20:33.428276+00:00",
   "source": "sql",
   "states": {
     "AZ": {
@@ -170,7 +170,7 @@
     },
     "TN": {
       "state": "TN",
-      "rows": 1246154,
+      "rows": 1493971,
       "months": [
         202509,
         202510,
@@ -178,19 +178,34 @@
         202512,
         202601,
         202602,
-        202603
+        202603,
+        202604
       ],
       "companies": [
-        "Advantage auto",
+        "AAA",
+        "Acceptance",
+        "Acuity Insurance",
+        "Advantage Auto",
+        "American Freedom",
+        "Auto-Owners",
         "Bristol West",
-        "Dairyland auto",
+        "Dairyland",
         "GAINSCO",
+        "Grange Insurance",
         "Hallmark",
+        "Hartford",
         "National General",
+        "Nationwide",
         "Other",
         "Progressive",
+        "Safeco",
+        "Safeway",
+        "Stillwater",
+        "Tennessee Auto Insurance Plan",
+        "The General",
         "Trexis",
-        "UIC"
+        "UIC",
+        "Westfield Insurance"
       ],
       "counties": [
         "ANDERSON",
@@ -217,6 +232,7 @@
         "HICKMAN",
         "JEFFERSON",
         "KNOX",
+        "LAWRENCE",
         "LOUDON",
         "MADISON",
         "MARSHALL",
