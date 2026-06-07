@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-20T16:21:40.169666+00:00",
+  "generated_at": "2026-06-07T16:19:43.706999+00:00",
   "source": "sql",
   "states": {
     "AZ": {
@@ -355,6 +355,102 @@
       "comparison_company": "Lamar Platinum",
       "our_companies": [
         "Lamar Platinum"
+      ]
+    },
+    "IN": {
+      "state": "IN",
+      "rows": 1508951,
+      "months": [
+        202509,
+        202510,
+        202511,
+        202512,
+        202601,
+        202602,
+        202603,
+        202604
+      ],
+      "companies": [
+        "Advantage Auto",
+        "AssuranceAmerica",
+        "Dairyland",
+        "First Acceptance",
+        "GAINSCO",
+        "National General",
+        "Other",
+        "Progressive",
+        "Traders",
+        "Trexis",
+        "UIC"
+      ],
+      "counties": [
+        "ALLEN",
+        "BARTHOLOMEW",
+        "BOONE",
+        "CASS",
+        "CLARK",
+        "DELAWARE",
+        "ELKHART",
+        "FLOYD",
+        "GRANT",
+        "HAMILTON",
+        "HANCOCK",
+        "HENDRICKS",
+        "HENRY",
+        "HOWARD",
+        "JOHNSON",
+        "KNOX",
+        "KOSCIUSKO",
+        "LAKE",
+        "LAPORTE",
+        "LAWRENCE",
+        "MADISON",
+        "MARION",
+        "MARSHALL",
+        "MONROE",
+        "MORGAN",
+        "NOBLE",
+        "Other",
+        "PORTER",
+        "SHELBY",
+        "STARKE",
+        "STJOSEPH",
+        "TIPPECANOE",
+        "UNKNOWN",
+        "VANDERBURGH",
+        "VIGO",
+        "WARRICK",
+        "WAYNE"
+      ],
+      "credit_codes": [
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "P",
+        "Q",
+        "S",
+        "U",
+        "V",
+        "W"
+      ],
+      "liab_limits": [
+        "25/50",
+        "50/100",
+        "100/300"
+      ],
+      "has_credit_formula": true,
+      "curated": true,
+      "comparison_company": "UIC",
+      "our_companies": [
+        "UIC"
       ]
     }
   }

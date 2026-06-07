@@ -106,16 +106,30 @@ COMPANY_MAP_TN: dict[int, str] = {
     48960076:  "UIC",
 }
 
+COMPANY_MAP_IN: dict[int, str] = {
+    8133224:   "Advantage Auto",
+    130093041: "AssuranceAmerica",
+    105189788: "Dairyland",
+    133896047: "First Acceptance",
+    126229347: "GAINSCO",
+    7870107:   "National General",
+    8915711:   "Progressive",
+    9575331:   "Traders",
+    95161375:  "Trexis",
+    48963025:  "UIC",
+}
+
 COMPANY_MAP_BY_STATE: dict[str, dict[int, str]] = {
     "IL": COMPANY_MAP_IL,
     "AZ": COMPANY_MAP_AZ,
     "TX": COMPANY_MAP_TX,
     "TN": COMPANY_MAP_TN,
+    "IN": COMPANY_MAP_IN,
 }
 
 # States whose curated map is considered exhaustive: ALL unmapped CompanyIds
 # collapse into the single "Other" bucket (no top-N kept by ID).
-EXHAUSTIVE_MAP_STATES: set[str] = {"IL", "AZ", "TX", "TN"}
+EXHAUSTIVE_MAP_STATES: set[str] = {"IL", "AZ", "TX", "TN", "IN"}
 
 # Comparison column per state. Left (secondary) column vs the named company,
 # right (always-present) column vs SIC. States absent from this dict → no
@@ -125,6 +139,7 @@ COMPARISON_COMPANY_BY_STATE: dict[str, str] = {
     "AZ": "SunCoast",
     "TX": "Lamar Platinum",
     "TN": "UIC",
+    "IN": "UIC",
 }
 
 # Companies "we represent" — the yellow-highlighted reference rows in the
@@ -134,10 +149,11 @@ OUR_COMPANIES_BY_STATE: dict[str, list[str]] = {
     "AZ": ["SunCoast", "SIC"],
     "TX": ["Lamar Platinum"],
     "TN": ["UIC"],
+    "IN": ["UIC"],
 }
 
 # Active states — only these get refreshed and shown in the frontend.
-ACTIVE_STATES: set[str] = {"IL", "AZ", "TX", "TN"}
+ACTIVE_STATES: set[str] = {"IL", "AZ", "TX", "TN", "IN"}
 
 # For non-curated states: how many top companies to display by distinct policy count.
 TOP_N_NON_CURATED = 15
