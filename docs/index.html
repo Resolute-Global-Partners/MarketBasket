@@ -66,10 +66,6 @@
       <label for="liab">Liab Limits</label>
       <select id="liab"></select>
     </div>
-    <div class="control">
-      <label for="payplan">Pay Plan</label>
-      <select id="payplan"></select>
-    </div>
   </div>
 
   <!-- Row 3 — credit code + county -->
@@ -109,6 +105,38 @@
     <div class="control">
       <label for="year-bin">Vehicle Year</label>
       <select id="year-bin"></select>
+    </div>
+  </div>
+
+  <!-- Row 5 — Rate filters: required, no "Any". Each picks ONE rate variant per policy. -->
+  <div class="filter-row filter-row-rate">
+    <div class="control">
+      <label for="payplan-type">Pay Plan</label>
+      <select id="payplan-type">
+        <option value="Various">Various</option>
+        <option value="Pay in Full">Pay in Full</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="has-phys-dmg">Phys Damage (Comp+Coll)</label>
+      <select id="has-phys-dmg">
+        <option value="0">No</option>
+        <option value="1">Yes</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="has-um-uim">UM/UIM</label>
+      <select id="has-um-uim">
+        <option value="0">No</option>
+        <option value="1">Yes</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="has-medpay">MedPay</label>
+      <select id="has-medpay">
+        <option value="0">No</option>
+        <option value="1">Yes</option>
+      </select>
     </div>
   </div>
 

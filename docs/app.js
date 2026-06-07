@@ -23,13 +23,8 @@ const COVERAGES = [
   "UIMBI", "UIMPD", "UninsBI", "UninsPD",
 ];
 
-const PAYPLAN_ORDER = [
-  "8% down, 12 payments", "10% down, 12 payments", "17% down, 6 payments",
-  "20% down, 5 payments", "20% down, 6 payments", "22% down, 6 payments",
-  "25% down, 4 payments", "25% down, 5 payments", "25% down, 6 payments",
-  "30% down, 5 payments", "40% down, 3 payments", "42% down, 5 payments",
-  "50% down, 2 payments", "Full pay",
-];
+// Rate filter ids — these are REQUIRED (no "Any"). Defaults set in index.html.
+const RATE_FILTER_IDS = ["payplan-type", "has-phys-dmg", "has-um-uim", "has-medpay"];
 
 // Default liab order if a state's index entry doesn't specify. Most states use
 // 25/50 as the floor; TX uses 30/60 (the index will override).
@@ -193,15 +188,6 @@ async function populateFiltersFromData() {
     : LIAB_ORDER_DEFAULT;
   setOptions("liab", ["Any", ...liabOrder], "Any");
 
-  let ppPresent = new Set();
-  try {
-    const ppRows = await sqlRows(
-      `SELECT DISTINCT PayPlan FROM mb WHERE PayPlan IS NOT NULL ORDER BY PayPlan`
-    );
-    ppPresent = new Set(ppRows.map(r => r.PayPlan));
-  } catch (e) { console.warn("payplan query failed", e); }
-  setOptions("payplan", ["Any", ...PAYPLAN_ORDER.filter(p => ppPresent.has(p))], "Any");
-
   setOptions("term", ["6", "12"], "6");
   setOptions("non-owner", ["Any", "No", "Yes"], "Any");
   setOptions("num-drivers",  ["Any", "1", "2", "3", "4+"], "Any");
@@ -257,7 +243,6 @@ function currentFilters() {
     creditTo:   v("credit-to"),
     county:   v("county"),
     liab:     v("liab"),
-    payplan:  v("payplan"),
     term:     parseInt(v("term"), 10),
     nonOwner: v("non-owner"),
     numDrv:   v("num-drivers"),
@@ -265,6 +250,11 @@ function currentFilters() {
     prior:    v("prior-insurance"),
     yearBin:  v("year-bin"),
     marketProvider: v("market-provider"),
+    // Rate filters (required, no "Any")
+    payplanType: v("payplan-type"),
+    hasPhysDmg:  v("has-phys-dmg"),
+    hasUmUim:    v("has-um-uim"),
+    hasMedpay:   v("has-medpay"),
   };
 }
 
@@ -316,12 +306,17 @@ function whereClause(f) {
   }
   if (f.county !== "Any") conds.push(`County = '${f.county.replace(/'/g, "''")}'`);
   if (f.liab    !== "Any") conds.push(`LiabLimits = '${f.liab}'`);
-  if (f.payplan !== "Any") conds.push(`PayPlan = '${f.payplan.replace(/'/g, "''")}'`);
   if (f.numDrv  !== "Any") conds.push(`NumDrivers = '${f.numDrv}'`);
   if (f.numVeh  !== "Any") conds.push(`NumVehicles = '${f.numVeh}'`);
   if (f.yearBin !== "Any") conds.push(`YearBin = '${f.yearBin}'`);
   if (f.nonOwner !== "Any") conds.push(`NonOwner = ${f.nonOwner === "Yes" ? 1 : 0}`);
   if (f.prior    !== "Any") conds.push(`PriorInsurance = ${f.prior === "Yes" ? 1 : 0}`);
+
+  // Rate filters — required, always applied (no "Any")
+  conds.push(`PayPlanType = '${f.payplanType}'`);
+  conds.push(`HasPhysDmg  = ${parseInt(f.hasPhysDmg, 10)}`);
+  conds.push(`HasUM_UIM   = ${parseInt(f.hasUmUim,   10)}`);
+  conds.push(`HasMedPay   = ${parseInt(f.hasMedpay,  10)}`);
 
   // Market Provider: all currently ingested data is from ITC. EZ Lynx data
   // hasn't been pulled yet, so filter it out. When Rate_Source is added to
@@ -714,10 +709,11 @@ function wireControls() {
 
   const filterIds = [
     "date-from", "date-to", "prem-min", "prem-max",
-    "liab", "payplan", "term", "market-provider",
+    "liab", "term", "market-provider",
     "credit-from", "credit-to", "county",
     "non-owner", "num-drivers", "num-vehicles",
     "prior-insurance", "year-bin",
+    ...RATE_FILTER_IDS,
   ];
   for (const id of filterIds) {
     document.getElementById(id).addEventListener("change", refreshAll);
@@ -744,7 +740,12 @@ function wireControls() {
 
   document.getElementById("reset").addEventListener("click", async () => {
     await populateFiltersFromData();
-    // Also reset discount inputs.
+    // Rate filters back to defaults (Various + No on everything).
+    document.getElementById("payplan-type").value = "Various";
+    document.getElementById("has-phys-dmg").value = "0";
+    document.getElementById("has-um-uim").value   = "0";
+    document.getElementById("has-medpay").value   = "0";
+    // Discount inputs.
     for (const id of discIds) {
       const el = document.getElementById(`disc-${id}`);
       if (el) el.value = "0";

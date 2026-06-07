@@ -96,9 +96,10 @@ def merge_and_write(
     """Combine existing + new monthly chunks, bucket, write, return index entry."""
     keep = existing[~existing["YYYYMM"].isin(replaced_months)] if not existing.empty else existing
     # Drop columns from older parquet schemas that no longer exist (e.g. CreditBin
-    # was replaced by CreditCode in 2026-05). Otherwise pd.concat would carry
-    # them through as NaN into the new aggregate.
-    legacy_cols = ["CreditBin"]
+    # was replaced by CreditCode in 2026-05; PayPlan was replaced by PayPlanType +
+    # coverage flags in 2026-06). Otherwise pd.concat would carry them through
+    # as NaN into the new aggregate.
+    legacy_cols = ["CreditBin", "PayPlan"]
     keep = keep.drop(columns=[c for c in legacy_cols if c in keep.columns], errors="ignore")
     parts = [k for k in [keep] if not k.empty] + new_chunks
     combined = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()

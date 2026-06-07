@@ -361,8 +361,20 @@ IL_CREDIT_CODE_CUTOFF = "2026-04-02"
 
 # ── Group-by dimensions (MUST match the frontend filter UI) ────────────────────
 
-GROUP_COLS: list[str] = [
-    "CompanyName", "PremBin", "LiabLimits", "PayPlan",
+# Two flavors of filter:
+#   - "Policy filters" (Any allowed): describe the customer/policy, don't vary
+#     within a single PolicyLinkID. Filtering on these only filters customers
+#     in/out, never duplicates them.
+#   - "Rate filters" (REQUIRED, no Any): describe the rate variant within a
+#     policy. The customer was offered N rates that differ on these; without
+#     forcing a choice, we'd double-count. See the bottom row in the dashboard.
+
+POLICY_COLS: list[str] = [
+    "CompanyName", "PremBin", "LiabLimits",
     "NonOwner", "NumDrivers", "NumVehicles", "County",
     "PriorInsurance", "YearBin", "Term", "CreditCode",
 ]
+RATE_COLS_DASHBOARD: list[str] = [
+    "PayPlanType", "HasPhysDmg", "HasUM_UIM", "HasMedPay",
+]
+GROUP_COLS: list[str] = POLICY_COLS + RATE_COLS_DASHBOARD

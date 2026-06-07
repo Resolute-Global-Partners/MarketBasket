@@ -21,7 +21,7 @@ from .config import (
     CREDIT_CARRIER_STATE_LAPSE, CREDIT_CARRIER_STATE_NO_LAPSE,
     CREDIT_CARRIER_STATE_NO_PC, CREDIT_CODE_MAP_IL_V2, CREDIT_CODE_MAP_V1,
     CREDIT_FORMULA_BY_STATE, CREDIT_FORMULA_STATES, GROUP_COLS,
-    IL_CREDIT_CODE_CUTOFF, PAYPLAN_LABELS, PREM_BIN_CAP, PREM_BIN_SIZE,
+    IL_CREDIT_CODE_CUTOFF, PREM_BIN_CAP, PREM_BIN_SIZE,
     PREM_COLS, YEAR_BINS, YEAR_LABELS,
 )
 from .preprocess import (
@@ -195,7 +195,22 @@ def _aggregate_one_state(
     if df.empty:
         return pd.DataFrame()
 
-    df["PayPlan"] = df["PayPlan"].map(PAYPLAN_LABELS).fillna(df["PayPlan"])
+    # ── Collapse to one row per policy variant ──────────────────────────────
+    # Grain: (PolicyLinkID, CompanyId, HasPhysDmg, HasUM_UIM, HasMedPay, PayPlanType).
+    # PurchasedFinal = any row in the group had Purchased=1.
+    # Pick MIN(TotalPremium) — drops the ~2% unexplained tier residual (NatGen
+    # offers multiple base prices for the same coverage; we take the cheaper).
+    collapse_key = [
+        "PolicyLinkID", "CompanyId",
+        "HasPhysDmg", "HasUM_UIM", "HasMedPay", "PayPlanType",
+    ]
+    df["PurchasedFinal"] = df.groupby(collapse_key)["Purchased"].transform("max")
+    df = (
+        df.sort_values("TotalPremium")
+          .drop_duplicates(collapse_key, keep="first")
+          .reset_index(drop=True)
+    )
+
     df["YearBin"] = pd.cut(df["Year"], bins=YEAR_BINS, labels=YEAR_LABELS).astype(str)
     df["NumDrivers"] = df["NumDrivers"].apply(_cap_drivers)
     df["NumVehicles"] = df["NumVehicles"].apply(_cap_vehicles)

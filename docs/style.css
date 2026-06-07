@@ -83,6 +83,24 @@ header h1 {
   align-items: flex-end;
 }
 
+/* Rate filters: required, no "Any" — each pick selects ONE rate variant per
+   policy. Visually separated so users know these behave differently. */
+.filter-row-rate {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.filter-row-rate::before {
+  content: "Rate filters (each picks one variant per policy)";
+  width: 100%;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
 .control {
   display: flex;
   flex-direction: column;

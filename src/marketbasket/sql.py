@@ -26,6 +26,7 @@ RATE_COLS = [
     "PolicyLinkID", "RateId", "CompanyId", "RateIteration",
     "RatedDate", "TotalPremium", "DownPayment", "PercentDown",
     "NumOfPayments", "Purchased", "NonOwner", "AssumedCredit", "Term",
+    "ThirdPartyId",  # ITC's quote-scenario ID; used for audit + Diamond join
 ]
 
 CAR_COLS = [

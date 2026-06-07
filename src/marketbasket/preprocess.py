@@ -1,12 +1,9 @@
 """Row-level preprocessing.
 
-Ported verbatim from /home/dchemaly/dev/MarketBasket/data.py. Do not change the
-math without discussion — the Excel output and this pipeline must stay
-bit-identical on the groupby result for IL/AZ, because those are the curated
-states users already trust.
-
-Each function takes a raw DataFrame (the shape MarketUnified returns) and
-returns a narrower one ready for merging.
+`preprocess_rate` / `_car` / `_driver` each take a raw DataFrame (the shape
+MarketUnified returns) and return a narrower one ready for merging. The
+collapse-to-policy dedup happens in `aggregate.py` AFTER the merge, because
+its key depends on car-side coverage flags.
 """
 from __future__ import annotations
 
@@ -16,9 +13,7 @@ from .config import (
     COMPANY_MAP_BY_STATE,
     COUNTY_COVERAGE_TARGET,
     EXHAUSTIVE_MAP_STATES,
-    PERCENT_DOWN_REMAP,
     PREM_COLS,
-    TOP_14_PLANS,
     TOP_N_NON_CURATED,
     VALID_LIAB,
     VALID_LIAB_BY_STATE,
@@ -105,6 +100,10 @@ def preprocess_car(df: pd.DataFrame, state: str) -> pd.DataFrame:
     2. Normalize County: uppercase, strip non-letters, apply synonyms; empty -> "UNKNOWN".
     3. Aggregate: LiabLimits/County (first car), NumVehicles, Year (max),
        coverage premiums (sum).
+    4. Derive coverage-signature flags (used as dedup key dimensions):
+         HasPhysDmg  — Comp or Coll on
+         HasUM_UIM   — Uninsured or Underinsured Motorist on
+         HasMedPay   — Medical Payments on
 
     Year=max corresponds to the newest car on the policy (smallest age) — used
     both for YearBin and for the PredictedCredit "Vehicle Min Age Range".
@@ -118,7 +117,7 @@ def preprocess_car(df: pd.DataFrame, state: str) -> pd.DataFrame:
 
     df["County"] = _normalize_county(df["County"])
 
-    return (
+    agg = (
         df.groupby("RateLinkID")
           .agg(
               LiabLimits=("LiabLimits", "first"),
@@ -131,20 +130,29 @@ def preprocess_car(df: pd.DataFrame, state: str) -> pd.DataFrame:
           .rename(columns={"RateLinkID": "RateId"})
     )
 
+    # Coverage-signature flags. The customer was offered N rates that differ on
+    # these; we use them as dedup-key dimensions so each combo gets its own row.
+    agg["HasPhysDmg"] = ((agg["CompPremium"]    > 0) | (agg["CollPremium"]    > 0)).astype(int)
+    agg["HasUM_UIM"]  = ((agg["UninsBIPremium"] > 0) | (agg["UninsPDPremium"] > 0)
+                       | (agg["UIMBIPremium"]   > 0) | (agg["UIMPDPremium"]   > 0)).astype(int)
+    agg["HasMedPay"]  = (agg["MedPayPremium"] > 0).astype(int)
+    return agg
+
 
 def preprocess_rate(df: pd.DataFrame, yyyymm: int, state: str) -> pd.DataFrame:
-    """fact_Rate → one row per (PolicyLinkID, CompanyId, PayPlan).
+    """fact_Rate → row-level cleaned rate frame (NOT yet deduplicated).
+
+    Dedup runs after the rate/car/driver merge in aggregate.py, because the
+    collapse key (PolicyLinkID, CompanyId, HasPhysDmg, HasUM_UIM, HasMedPay,
+    PayPlanType) depends on car-side coverage flags.
 
     1. Keep rows where RatedDate matches the yyyymm of the pull.
     2. Drop policies with inconsistent NonOwner/AssumedCredit across quotes.
     3. Repair dollar-code PercentDown (Kemper etc.) using DownPayment/TotalPremium.
-    4. Normalize PercentDown → closest canonical value; derive PayPlan label.
-    5. PurchasedFinal = any row in the group was Purchased=1.
-    6. Keep earliest RateIteration, lowest TotalPremium per key.
-    7. Map CompanyId → CompanyName (curated states) OR keep as string.
-
-    For non-curated states: names are left as CompanyId-string here; the
-    aggregation step later applies the top-15-plus-Other rule.
+    4. Derive PayPlanType: "Pay in Full" when PercentDown == 100, else "Various".
+       All installment plans share the same total premium (only PIF differs),
+       so the 14-plan breakdown was inflating quote counts.
+    5. Map CompanyId → CompanyName (curated states) OR keep as string.
     """
     df = df.copy()
 
@@ -173,32 +181,14 @@ def preprocess_rate(df: pd.DataFrame, yyyymm: int, state: str) -> pd.DataFrame:
         df.loc[dollar_code, "PercentDown"] = derived
 
     # ── 4 ────────────────────────────────────────────────────────────────────
-    pct_r = df["PercentDown"].round(1).replace(PERCENT_DOWN_REMAP)
-    pay = (df["NumOfPayments"] + 1).where(df["PercentDown"] != 100.0, 1)
-    df["PayPlan"] = list(zip(pct_r, pay))
-    df["PayPlan"] = df["PayPlan"].map(TOP_14_PLANS)
-    df = df[df["PayPlan"].notna()].copy()
+    df["PayPlanType"] = (df["PercentDown"] == 100.0).map({True: "Pay in Full", False: "Various"})
 
     # ── 5 ────────────────────────────────────────────────────────────────────
-    key = ["PolicyLinkID", "CompanyId", "PayPlan"]
-    purchased_flag = df.groupby(key)["Purchased"].max().rename("PurchasedFinal")
-    df = df.merge(purchased_flag, on=key, how="left")
-
-    # ── 6 ────────────────────────────────────────────────────────────────────
-    df = df.sort_values("RateIteration").drop_duplicates(key, keep="first")
-    df = (
-        df.sort_values("TotalPremium")
-          .drop_duplicates(key, keep="first")
-          .reset_index(drop=True)
-    )
-
-    # ── 7 ────────────────────────────────────────────────────────────────────
     # Unmapped companies are ALWAYS kept (as CompanyId-as-string). The
     # downstream apply_top_n_on_aggregated step then decides how to bucket
     # them per state: exhaustive states bucket all unmapped into a single
     # "Other (N=X)" row; other curated states keep top-5 + Other; non-curated
-    # states keep top-15 + Other. The result: every state gets an Other row
-    # that represents the unmapped market, matching the original Excel.
+    # states keep top-15 + Other.
     company_map = COMPANY_MAP_BY_STATE.get(state, {})
     df["CompanyName"] = df["CompanyId"].map(
         lambda c: company_map.get(c, str(c))
