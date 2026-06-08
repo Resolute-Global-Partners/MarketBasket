@@ -36,6 +36,9 @@ const app = {
   db: null, conn: null, index: null,
   currentState: null, grid: null,
   lastRows: null, lastTotalRow: null,
+  // Session cache so re-selecting a state never re-downloads its parquet.
+  buffers: {},            // stateCode -> Uint8Array
+  registered: new Set(),  // parquet filenames already registered with DuckDB
   // True when the current parquet has Sum<C>Bridging columns. Older parquets
   // don't, and we fall back to a scaling approximation.
   hasExactBridging: false,
@@ -93,13 +96,24 @@ async function loadState(stateCode) {
   if (!entry) { setStatus(`Unknown state: ${stateCode}`, true); return; }
 
   setStatus(`Loading ${stateCode}…`);
-  const url = `data/${stateCode}.parquet?t=${Date.now()}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${url} missing (HTTP ${res.status})`);
-  const buf = new Uint8Array(await res.arrayBuffer());
-
   const fname = `${stateCode}.parquet`;
-  await app.db.registerFileBuffer(fname, buf);
+
+  // Download each state's parquet at most once per session. The cache-bust
+  // token is the data's publish timestamp (not Date.now()), so the browser
+  // disk cache can serve it instantly on repeat visits while a real data
+  // refresh — which changes generated_at — still busts it.
+  if (!app.buffers[stateCode]) {
+    const ver = encodeURIComponent(app.index.generated_at || "0");
+    const url = `data/${stateCode}.parquet?v=${ver}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${url} missing (HTTP ${res.status})`);
+    app.buffers[stateCode] = new Uint8Array(await res.arrayBuffer());
+  }
+  if (!app.registered.has(fname)) {
+    await app.db.registerFileBuffer(fname, app.buffers[stateCode]);
+    app.registered.add(fname);
+  }
+
   await app.conn.query(`DROP VIEW IF EXISTS mb`);
   await app.conn.query(`CREATE VIEW mb AS SELECT * FROM read_parquet('${fname}')`);
 
@@ -228,6 +242,43 @@ async function populateFiltersFromData() {
   setOptions("county", ["Any", ...counties], "Any");
 
   document.getElementById("market-provider").value = "ITC";
+
+  await setDefaultRateFilters();
+}
+
+/**
+ * Default the coverage-signature rate filters to the most common real
+ * combination in THIS state's data, rather than a hardcoded "liability-only".
+ *
+ * Liability-only (No/No/No) is modal where UM/MedPay are optional (AZ/TN/IN),
+ * but in compulsory-UM states like Illinois ~100% of every carrier's quotes
+ * carry UM — so a hardcoded UM=No selected ~1% of the state and produced a
+ * wildly unrepresentative comparison (a handful of stray quotes per carrier).
+ * Picking the modal signature keeps the default view representative everywhere.
+ * PayPlanType stays "Various" (the common pay type; PIF has identical premium).
+ */
+async function setDefaultRateFilters() {
+  document.getElementById("payplan-type").value = "Various";
+  try {
+    const rows = await sqlRows(`
+      SELECT HasPhysDmg, HasUM_UIM, HasMedPay
+      FROM mb WHERE PayPlanType = 'Various'
+      GROUP BY 1, 2, 3
+      ORDER BY SUM(Quotes) DESC
+      LIMIT 1
+    `);
+    if (rows.length) {
+      const r = rows[0];
+      document.getElementById("has-phys-dmg").value = String(Number(r.HasPhysDmg));
+      document.getElementById("has-um-uim").value   = String(Number(r.HasUM_UIM));
+      document.getElementById("has-medpay").value   = String(Number(r.HasMedPay));
+    }
+  } catch (e) {
+    console.warn("default rate-filter query failed; using No/No/No", e);
+    document.getElementById("has-phys-dmg").value = "0";
+    document.getElementById("has-um-uim").value   = "0";
+    document.getElementById("has-medpay").value   = "0";
+  }
 }
 
 // ─── SQL ───────────────────────────────────────────────────────────────────
@@ -739,12 +790,9 @@ function wireControls() {
   });
 
   document.getElementById("reset").addEventListener("click", async () => {
+    // populateFiltersFromData() already resets the rate filters to the state's
+    // modal coverage signature via setDefaultRateFilters().
     await populateFiltersFromData();
-    // Rate filters back to defaults (Various + No on everything).
-    document.getElementById("payplan-type").value = "Various";
-    document.getElementById("has-phys-dmg").value = "0";
-    document.getElementById("has-um-uim").value   = "0";
-    document.getElementById("has-medpay").value   = "0";
     // Discount inputs.
     for (const id of discIds) {
       const el = document.getElementById(`disc-${id}`);
