@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-07T22:33:19.136743+00:00",
+  "generated_at": "2026-06-08T13:04:20.141713+00:00",
   "source": "sql",
   "states": {
     "AZ": {
       "state": "AZ",
-      "rows": 1933692,
+      "rows": 1860020,
       "months": [
         202508,
         202509,
@@ -37,7 +37,9 @@
       "counties": [
         "MARICOPA",
         "Other",
-        "PIMA"
+        "PIMA",
+        "PINAL",
+        "YUMA"
       ],
       "credit_codes": [
         "C",
@@ -73,7 +75,7 @@
     },
     "IL": {
       "state": "IL",
-      "rows": 2896859,
+      "rows": 2948924,
       "months": [
         202405,
         202406,
@@ -117,10 +119,15 @@
         "UnitedEquitable"
       ],
       "counties": [
+        "CHAMPAIGN",
         "COOK",
         "DUPAGE",
         "KANE",
+        "KANKAKEE",
         "LAKE",
+        "MACON",
+        "MADISON",
+        "MCHENRY",
         "Other",
         "PEORIA",
         "SANGAMON",
@@ -164,7 +171,7 @@
     },
     "TN": {
       "state": "TN",
-      "rows": 1493057,
+      "rows": 1123337,
       "months": [
         202509,
         202510,
@@ -199,7 +206,6 @@
         "CAMPBELL",
         "CARTER",
         "CHEATHAM",
-        "CLAIBORNE",
         "COCKE",
         "COFFEE",
         "CUMBERLAND",
@@ -207,8 +213,8 @@
         "DICKSON",
         "DYER",
         "FAYETTE",
-        "FRANKLIN",
         "GIBSON",
+        "GRAINGER",
         "GREENE",
         "HAMBLEN",
         "HAMILTON",
@@ -216,7 +222,6 @@
         "HICKMAN",
         "JEFFERSON",
         "KNOX",
-        "LAWRENCE",
         "LOUDON",
         "MADISON",
         "MARSHALL",
@@ -231,7 +236,6 @@
         "RUTHERFORD",
         "SEVIER",
         "SHELBY",
-        "SHELBYCOUNTY",
         "SULLIVAN",
         "SUMNER",
         "TIPTON",
