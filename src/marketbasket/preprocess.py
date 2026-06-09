@@ -271,10 +271,18 @@ def apply_county_top_n_on_aggregated(
     if total <= 0:
         return df
 
-    cumshare = by_county.cumsum() / total
+    # Rank ONLY real counties for the keep decision. A pre-existing "Other"
+    # bucket must never re-enter the ranking: if it did, once it grew large it
+    # would consume the coverage budget and push real counties out, collapsing
+    # a few more counties on every re-bucket (a runaway that ends with
+    # everything in Other). Its mass still counts toward `total`, so the target
+    # denominator is stable across passes — that makes this idempotent: the
+    # counties kept on the first pass stay kept on every subsequent pass.
+    real = by_county[by_county.index != "Other"]
+    cumshare = real.cumsum() / total
     # Keep counties up to and including the one that crosses the target.
     keep_mask = cumshare.shift(fill_value=0.0) < COUNTY_COVERAGE_TARGET
-    keep = by_county.index[keep_mask].tolist()
+    keep = real.index[keep_mask].tolist()
 
     df = df.copy()
     df.loc[~df["County"].isin(keep), "County"] = "Other"

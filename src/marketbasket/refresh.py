@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 import time
 from collections import defaultdict
@@ -37,6 +38,11 @@ from .preprocess import (
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT / "docs" / "data"
+
+# GitHub rejects any pushed file > 100 MiB. When a state's single parquet would
+# exceed this, we split it into one file per month under data/<STATE>/ and the
+# frontend unions them. 95 MiB leaves headroom below the hard limit.
+SHARD_THRESHOLD_BYTES = 95 * 1024 * 1024
 
 
 def discover() -> dict[str, list[str]]:
@@ -78,11 +84,54 @@ def order_for_cache_warmth(targets: dict[str, list[str]]) -> list[tuple[str, lis
 
 
 def load_existing_parquet(state: str) -> pd.DataFrame:
-    """Load the current site/data/<STATE>.parquet if it exists, else empty frame."""
+    """Load current data for a state. Prefers the sharded layout
+    (data/<STATE>/*.parquet) when present, else the single
+    data/<STATE>.parquet, else an empty frame."""
+    shard_dir = DATA_DIR / state
+    if shard_dir.is_dir():
+        parts = [pd.read_parquet(p) for p in sorted(shard_dir.glob("*.parquet"))]
+        if parts:
+            return pd.concat(parts, ignore_index=True)
     path = DATA_DIR / f"{state}.parquet"
     if not path.exists():
         return pd.DataFrame()
     return pd.read_parquet(path)
+
+
+def write_state_data(state: str, combined: pd.DataFrame) -> tuple[int, list[str] | None]:
+    """Write a state's combined frame to disk, sharding by month when a single
+    file would exceed SHARD_THRESHOLD_BYTES. Returns (total_bytes, shards) where
+    shards is None for the single-file layout or the list of relative shard
+    paths otherwise. Keeps the two layouts mutually exclusive on disk."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    single = DATA_DIR / f"{state}.parquet"
+    shard_dir = DATA_DIR / state
+
+    combined.to_parquet(single, index=False, compression="snappy")
+    single_size = single.stat().st_size
+
+    if single_size <= SHARD_THRESHOLD_BYTES:
+        if shard_dir.exists():           # drop any stale shard layout
+            shutil.rmtree(shard_dir)
+        return single_size, None
+
+    # Over the limit — split into one parquet per month. The Top-N / county
+    # bucketing already ran on the full combined frame, so shards stay mutually
+    # consistent. The frontend re-unions them via read_parquet([...]).
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    months = sorted(int(m) for m in combined["YYYYMM"].unique())
+    keep = {f"{m}.parquet" for m in months}
+    shards, total = [], 0
+    for m in months:
+        fp = shard_dir / f"{m}.parquet"
+        combined[combined["YYYYMM"] == m].to_parquet(fp, index=False, compression="snappy")
+        total += fp.stat().st_size
+        shards.append(f"{state}/{m}.parquet")
+    for p in shard_dir.glob("*.parquet"):   # prune months no longer present
+        if p.name not in keep:
+            p.unlink()
+    single.unlink()                          # remove the over-limit single file
+    return total, shards
 
 
 def merge_and_write(
@@ -109,13 +158,15 @@ def merge_and_write(
     combined = apply_top_n_on_aggregated(combined, state, GROUP_COLS)
     combined = apply_county_top_n_on_aggregated(combined, GROUP_COLS)
 
-    out = DATA_DIR / f"{state}.parquet"
+    shards: list[str] | None = None
     if not dry_run:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        combined.to_parquet(out, index=False, compression="snappy")
-    size_kb = out.stat().st_size / 1024 if out.exists() else 0
-    print(f"  {state}: {len(combined):>7,} rows, {size_kb:>6.0f} KB  "
-          f"({combined['YYYYMM'].nunique()} months)")
+        total_bytes, shards = write_state_data(state, combined)
+        layout = (f"{len(shards)} month-shards" if shards
+                  else f"{combined['YYYYMM'].nunique()} months")
+        print(f"  {state}: {len(combined):>7,} rows, {total_bytes/1024:>6.0f} KB  ({layout})")
+    else:
+        print(f"  {state}: {len(combined):>7,} rows (dry-run)  "
+              f"({combined['YYYYMM'].nunique()} months)")
 
     counties = sorted(combined["County"].dropna().unique().tolist()) if "County" in combined.columns else []
 
@@ -143,6 +194,7 @@ def merge_and_write(
         "curated": state in COMPANY_MAP_BY_STATE,
         "comparison_company": COMPARISON_COMPANY_BY_STATE.get(state),
         "our_companies": OUR_COMPANIES_BY_STATE.get(state, []),
+        "shards": shards,
     }
 
 
@@ -176,6 +228,16 @@ def prune_inactive_states(*, dry_run: bool) -> None:
             removed_files.append(path.name)
             if not dry_run:
                 path.unlink()
+    # Sharded states live in data/<STATE>/ — drop orphan shard dirs too.
+    for path in DATA_DIR.iterdir():
+        is_state_shard_dir = (
+            path.is_dir() and path.name.isalpha() and len(path.name) == 2
+            and any(path.glob("*.parquet"))
+        )
+        if is_state_shard_dir and path.name not in ACTIVE_STATES:
+            removed_files.append(f"{path.name}/")
+            if not dry_run:
+                shutil.rmtree(path)
 
     if index_path.exists():
         try:

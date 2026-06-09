@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-08T13:04:20.141713+00:00",
+  "generated_at": "2026-06-09T16:47:58.582193+00:00",
   "source": "sql",
   "states": {
     "AZ": {
       "state": "AZ",
-      "rows": 1860020,
+      "rows": 1931783,
       "months": [
         202508,
         202509,
@@ -14,7 +14,8 @@
         202601,
         202602,
         202603,
-        202604
+        202604,
+        202605
       ],
       "companies": [
         "Alpine",
@@ -37,9 +38,7 @@
       "counties": [
         "MARICOPA",
         "Other",
-        "PIMA",
-        "PINAL",
-        "YUMA"
+        "PIMA"
       ],
       "credit_codes": [
         "C",
@@ -75,7 +74,7 @@
     },
     "IL": {
       "state": "IL",
-      "rows": 2948924,
+      "rows": 2899322,
       "months": [
         202405,
         202406,
@@ -100,7 +99,8 @@
         202601,
         202602,
         202603,
-        202604
+        202604,
+        202605
       ],
       "companies": [
         "AmFreedom",
@@ -119,20 +119,13 @@
         "UnitedEquitable"
       ],
       "counties": [
-        "CHAMPAIGN",
         "COOK",
         "DUPAGE",
         "KANE",
-        "KANKAKEE",
         "LAKE",
-        "MACON",
-        "MADISON",
-        "MCHENRY",
         "Other",
-        "PEORIA",
         "SANGAMON",
         "STCLAIR",
-        "UNKNOWN",
         "WILL",
         "WINNEBAGO"
       ],
@@ -171,7 +164,7 @@
     },
     "TN": {
       "state": "TN",
-      "rows": 1123337,
+      "rows": 1188845,
       "months": [
         202509,
         202510,
@@ -180,7 +173,8 @@
         202601,
         202602,
         202603,
-        202604
+        202604,
+        202605
       ],
       "companies": [
         "Acceptance",
@@ -200,38 +194,22 @@
       ],
       "counties": [
         "ANDERSON",
-        "BEDFORD",
         "BLOUNT",
         "BRADLEY",
-        "CAMPBELL",
-        "CARTER",
         "CHEATHAM",
-        "COCKE",
-        "COFFEE",
-        "CUMBERLAND",
         "DAVIDSON",
         "DICKSON",
         "DYER",
-        "FAYETTE",
-        "GIBSON",
-        "GRAINGER",
         "GREENE",
         "HAMBLEN",
         "HAMILTON",
-        "HAWKINS",
-        "HICKMAN",
         "JEFFERSON",
         "KNOX",
-        "LOUDON",
         "MADISON",
-        "MARSHALL",
         "MAURY",
-        "MCMINN",
-        "MONROE",
         "MONTGOMERY",
         "Other",
         "PUTNAM",
-        "ROANE",
         "ROBERTSON",
         "RUTHERFORD",
         "SEVIER",
@@ -276,7 +254,7 @@
     },
     "TX": {
       "state": "TX",
-      "rows": 5154550,
+      "rows": 7225530,
       "months": [
         202509,
         202510,
@@ -285,7 +263,8 @@
         202601,
         202602,
         202603,
-        202604
+        202604,
+        202605
       ],
       "companies": [
         "Acacia",
@@ -318,16 +297,9 @@
       ],
       "counties": [
         "BEXAR",
-        "COLLIN",
         "DALLAS",
-        "ELPASO",
-        "FORTBEND",
         "HARRIS",
-        "HIDALGO",
-        "Other",
-        "TARRANT",
-        "TRAVIS",
-        "UNKNOWN"
+        "Other"
       ],
       "credit_codes": [
         "C",
@@ -359,11 +331,22 @@
       "comparison_company": "Lamar Platinum",
       "our_companies": [
         "Lamar Platinum"
+      ],
+      "shards": [
+        "TX/202509.parquet",
+        "TX/202510.parquet",
+        "TX/202511.parquet",
+        "TX/202512.parquet",
+        "TX/202601.parquet",
+        "TX/202602.parquet",
+        "TX/202603.parquet",
+        "TX/202604.parquet",
+        "TX/202605.parquet"
       ]
     },
     "IN": {
       "state": "IN",
-      "rows": 1154510,
+      "rows": 1194417,
       "months": [
         202509,
         202510,
@@ -372,7 +355,8 @@
         202601,
         202602,
         202603,
-        202604
+        202604,
+        202605
       ],
       "companies": [
         "Advantage Auto",
@@ -389,38 +373,24 @@
       ],
       "counties": [
         "ALLEN",
-        "BARTHOLOMEW",
-        "BOONE",
-        "CASS",
         "CLARK",
         "DELAWARE",
         "ELKHART",
-        "FLOYD",
-        "GRANT",
         "HAMILTON",
         "HANCOCK",
         "HENDRICKS",
-        "HENRY",
-        "HOWARD",
         "JOHNSON",
-        "KNOX",
-        "KOSCIUSKO",
         "LAKE",
         "LAPORTE",
         "MADISON",
         "MARION",
-        "MONROE",
-        "MORGAN",
         "Other",
         "PORTER",
-        "STARKE",
         "STJOSEPH",
         "TIPPECANOE",
         "UNKNOWN",
         "VANDERBURGH",
-        "VIGO",
-        "WARRICK",
-        "WAYNE"
+        "VIGO"
       ],
       "credit_codes": [
         "C",

@@ -37,8 +37,8 @@ const app = {
   currentState: null, grid: null,
   lastRows: null, lastTotalRow: null,
   // Session cache so re-selecting a state never re-downloads its parquet.
-  buffers: {},            // stateCode -> Uint8Array
-  registered: new Set(),  // parquet filenames already registered with DuckDB
+  buffers: {},            // stateCode -> { relPath -> Uint8Array }
+  registered: new Set(),  // VFS names already registered with DuckDB
   // True when the current parquet has Sum<C>Bridging columns. Older parquets
   // don't, and we fall back to a scaling approximation.
   hasExactBridging: false,
@@ -96,26 +96,46 @@ async function loadState(stateCode) {
   if (!entry) { setStatus(`Unknown state: ${stateCode}`, true); return; }
 
   setStatus(`Loading ${stateCode}…`);
-  const fname = `${stateCode}.parquet`;
 
-  // Download each state's parquet at most once per session. The cache-bust
-  // token is the data's publish timestamp (not Date.now()), so the browser
-  // disk cache can serve it instantly on repeat visits while a real data
-  // refresh — which changes generated_at — still busts it.
+  // A state's data is either a single <STATE>.parquet or, when one file would
+  // exceed GitHub's 100 MiB push limit, a list of per-month shard files
+  // (entry.shards, e.g. ["TX/202509.parquet", ...]). Both are unioned the same
+  // way via read_parquet([...]).
+  const relPaths = Array.isArray(entry.shards) && entry.shards.length
+    ? entry.shards
+    : [`${stateCode}.parquet`];
+
+  // Download each state's files at most once per session. The cache-bust token
+  // is the data's publish timestamp (not Date.now()), so the browser disk cache
+  // can serve them instantly on repeat visits while a real data refresh — which
+  // changes generated_at — still busts them.
   if (!app.buffers[stateCode]) {
     const ver = encodeURIComponent(app.index.generated_at || "0");
-    const url = `data/${stateCode}.parquet?v=${ver}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url} missing (HTTP ${res.status})`);
-    app.buffers[stateCode] = new Uint8Array(await res.arrayBuffer());
+    const bufs = {};
+    for (const rel of relPaths) {
+      const url = `data/${rel}?v=${ver}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url} missing (HTTP ${res.status})`);
+      bufs[rel] = new Uint8Array(await res.arrayBuffer());
+    }
+    app.buffers[stateCode] = bufs;
   }
-  if (!app.registered.has(fname)) {
-    await app.db.registerFileBuffer(fname, app.buffers[stateCode]);
-    app.registered.add(fname);
+  // Register each file under a VFS name that mirrors its path ("/" -> "_") so
+  // shards from different states never collide.
+  const regNames = [];
+  for (const rel of relPaths) {
+    const reg = rel.replace(/\//g, "_");
+    if (!app.registered.has(reg)) {
+      await app.db.registerFileBuffer(reg, app.buffers[stateCode][rel]);
+      app.registered.add(reg);
+    }
+    regNames.push(`'${reg}'`);
   }
 
   await app.conn.query(`DROP VIEW IF EXISTS mb`);
-  await app.conn.query(`CREATE VIEW mb AS SELECT * FROM read_parquet('${fname}')`);
+  await app.conn.query(
+    `CREATE VIEW mb AS SELECT * FROM read_parquet([${regNames.join(", ")}])`
+  );
 
   app.currentState = stateCode;
   // Probe the parquet schema once so refreshAll knows which path to take.
