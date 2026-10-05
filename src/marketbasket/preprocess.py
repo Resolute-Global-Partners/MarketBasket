@@ -14,6 +14,7 @@ from .config import (
     COUNTY_COVERAGE_TARGET,
     EXHAUSTIVE_MAP_STATES,
     PREM_COLS,
+    RATE_SOURCE_CODES,
     TOP_N_NON_CURATED,
     VALID_LIAB,
     VALID_LIAB_BY_STATE,
@@ -182,6 +183,23 @@ def preprocess_rate(df: pd.DataFrame, yyyymm: int, state: str) -> pd.DataFrame:
 
     # ── 4 ────────────────────────────────────────────────────────────────────
     df["PayPlanType"] = (df["PercentDown"] == 100.0).map({True: "Pay in Full", False: "Various"})
+
+    # Rating platform the quote came through. Stored as a padded varchar, so
+    # strip it; blanks/nulls become "Unknown" rather than NaN so the column
+    # stays groupable and the frontend dropdown has a real value to show.
+    if "Rate_Source" in df.columns:
+        df["RateSource"] = (
+            df["Rate_Source"].astype("string").str.strip().replace("", pd.NA).fillna("Unknown")
+        )
+        # A source we have never seen means a new rating platform started
+        # feeding MarketUnified. It will silently become a new dropdown value,
+        # so say so — someone needs to decide what it is before it is trusted.
+        unexpected = set(df["RateSource"].dropna().unique()) - set(RATE_SOURCE_CODES) - {"Unknown"}
+        if unexpected:
+            print(f"    !! unexpected Rate_Source value(s): {sorted(unexpected)} "
+                  f"- add to RATE_SOURCE_CODES once identified", flush=True)
+    else:
+        df["RateSource"] = "Unknown"
 
     # ── 5 ────────────────────────────────────────────────────────────────────
     # Unmapped companies are ALWAYS kept (as CompanyId-as-string). The

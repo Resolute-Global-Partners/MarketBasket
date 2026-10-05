@@ -155,6 +155,32 @@ OUR_COMPANIES_BY_STATE: dict[str, list[str]] = {
 # Active states — only these get refreshed and shown in the frontend.
 ACTIVE_STATES: set[str] = {"IL", "AZ", "TX", "TN", "IN"}
 
+# Months withheld from the published data because the SOURCE load into
+# MarketUnified is incomplete — re-pulling cannot fix them, and publishing a
+# 20%-populated month makes a broken ETL look like a collapse in shopping
+# volume. Verified against dbo.DataLineage (which records RowsLoaded per
+# state/source/month). Delete an entry once the month has been reloaded
+# upstream; the next refresh will then pick it up normally.
+EXCLUDED_MONTHS_BY_STATE: dict[str, set[int]] = {
+    # 202405-202412: MarketUnified only ever loaded ~10-12k fact_Rate rows per
+    # month for IL (vs ~1.4M from 202501 onward). Real history starts 202501.
+    "IL": {202405, 202406, 202407, 202408, 202409, 202410, 202411, 202412},
+    # 202607: reloaded 2026-10-01 but only fact_Rate for TR (10.4M rows);
+    # TR fact_Rate_Car / _Driver / _Violation are absent (API and TFW have
+    # them, and TR has them in 202606), so the rate->car/driver join would
+    # silently drop TR's vehicle/driver detail. DataLineage's fact_Rate-only
+    # count does not catch this.
+    # 202608: the TX/TR fact_Rate slice is missing entirely (14/15 loads).
+    # Drop both until the ETL is re-run.
+    "TX": {202607, 202608},
+}
+
+
+def excluded_months(state: str) -> set[int]:
+    """Months this state must not publish. See EXCLUDED_MONTHS_BY_STATE."""
+    return EXCLUDED_MONTHS_BY_STATE.get(state, set())
+
+
 # For non-curated states: how many top companies to display by distinct policy count.
 TOP_N_NON_CURATED = 15
 
@@ -373,7 +399,24 @@ POLICY_COLS: list[str] = [
     "CompanyName", "PremBin", "LiabLimits",
     "NonOwner", "NumDrivers", "NumVehicles", "County",
     "PriorInsurance", "YearBin", "Term", "CreditCode",
+    # RateSource is the rating platform the quote came through. Measured
+    # 2026-09-28: only 0.67% of PolicyLinkIDs span more than one source
+    # (TX 1.05%, others 0.10-0.20%), so it behaves as a policy attribute and
+    # "Any" is safe here. Those 0.67% do contribute one row per source, so an
+    # "Any" total can exceed distinct policies by up to ~0.7% — smaller than
+    # the ~2% sub-tier residual already accepted, and preferable to forcing
+    # users to pick a platform on a whole-market dashboard.
+    "RateSource",
 ]
+
+# Raw Rate_Source codes as they appear in MarketUnified.fact_Rate.
+# NOT mapped to vendor names: fingerprinting (ThirdPartyId shape, carrier
+# counts, bind rates) did not conclusively identify which code is ITC and
+# which is EZ Lynx, and guessing from a name is exactly the mistake the
+# Diamond-naming rule warns about. Shown raw in the UI until the data owner
+# confirms. Observed bind rates: TR 3.91%, API 0.44%, TFW 0.09%.
+RATE_SOURCE_CODES: list[str] = ["API", "TR", "TFW"]
+
 RATE_COLS_DASHBOARD: list[str] = [
     "PayPlanType", "HasPhysDmg", "HasUM_UIM", "HasMedPay",
 ]

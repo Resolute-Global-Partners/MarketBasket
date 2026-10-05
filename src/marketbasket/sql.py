@@ -26,8 +26,18 @@ RATE_COLS = [
     "PolicyLinkID", "RateId", "CompanyId", "RateIteration",
     "RatedDate", "TotalPremium", "DownPayment", "PercentDown",
     "NumOfPayments", "Purchased", "NonOwner", "AssumedCredit", "Term",
-    "ThirdPartyId",  # ITC's quote-scenario ID; used for audit + Diamond join
+    "ThirdPartyId",   # quote-scenario ID; used for audit + Diamond join
+    "Rate_Source",    # rating platform the quote came through (API / TR / TFW)
 ]
+
+# What the DASHBOARD pipeline actually reads. ThirdPartyId (varchar(250)) and
+# RateIteration are never touched by preprocess/aggregate/refresh — they exist
+# for the ad-hoc research scripts, which call fetch_rate() with the full
+# RATE_COLS default. Pulling them for a refresh costs VPN transfer and a large
+# object-dtype column per row for nothing, and that memory is what caps how
+# many months we can batch (TX especially). Output is byte-identical either
+# way, because neither column reaches the aggregate.
+RATE_COLS_AGG = [c for c in RATE_COLS if c not in {"ThirdPartyId", "RateIteration"}]
 
 CAR_COLS = [
     "RateLinkID", "RateVehicleId",
@@ -80,40 +90,63 @@ def discover_state_months(sample_percent: float = 1.0) -> pd.DataFrame:
 
 
 # ─── Per-(state, month) pulls ─────────────────────────────────────────────────
+#
+# A TX month is ~17M fact_Rate / ~23M fact_Rate_Car rows; one fact_Rate_Car
+# query runs 25-50 minutes, and a VPN drop anywhere in it loses the lot. The
+# `source` argument narrows a pull to one slice of Rate_Source so each query is
+# shorter. Rate_Source is NOT NULL on all four fact tables, so these slices
+# partition every (state, month) exactly. Two slices, not one per code: every
+# query pays a full-table scan (~5 min fact_Rate, ~9 min fact_Rate_Car), and
+# TR is ~60% of a TX month, so splitting API from TFW would add scans without
+# shortening the longest query. "rest" is API + TFW + any code added later.
+SOURCE_SLICES: dict[str, str] = {
+    "TR":   "Rate_Source = 'TR'",
+    "rest": "Rate_Source <> 'TR'",
+}
 
-def fetch_rate(state: str, yyyymm: str) -> pd.DataFrame:
-    """fact_Rate rows for one state + one month."""
+
+def _month_where(state: str, yyyymm: str, source: str | None) -> str:
     _validate(state, yyyymm)
+    where = f"State_Name = '{state}' AND Year_Month = '{yyyymm}'"
+    if source is not None:
+        where += f" AND {SOURCE_SLICES[source]}"
+    return where
+
+
+def fetch_rate(state: str, yyyymm: str, *, cols: list[str] | None = None,
+               source: str | None = None) -> pd.DataFrame:
+    """fact_Rate rows for one state + one month (optionally one source slice).
+
+    Defaults to the full RATE_COLS so the research scripts keep the columns
+    they rely on. The refresh pipeline passes cols=RATE_COLS_AGG.
+    """
     return load(
-        f"SELECT {_select(RATE_COLS)} FROM dbo.fact_Rate "
-        f"WHERE State_Name = '{state}' AND Year_Month = '{yyyymm}'",
+        f"SELECT {_select(cols or RATE_COLS)} FROM dbo.fact_Rate "
+        f"WHERE {_month_where(state, yyyymm, source)}",
         DB,
     )
 
 
-def fetch_car(state: str, yyyymm: str) -> pd.DataFrame:
-    _validate(state, yyyymm)
+def fetch_car(state: str, yyyymm: str, *, source: str | None = None) -> pd.DataFrame:
     return load(
         f"SELECT {_select(CAR_COLS)} FROM dbo.fact_Rate_Car "
-        f"WHERE State_Name = '{state}' AND Year_Month = '{yyyymm}'",
+        f"WHERE {_month_where(state, yyyymm, source)}",
         DB,
     )
 
 
-def fetch_driver(state: str, yyyymm: str) -> pd.DataFrame:
-    _validate(state, yyyymm)
+def fetch_driver(state: str, yyyymm: str, *, source: str | None = None) -> pd.DataFrame:
     return load(
         f"SELECT {_select(DRV_COLS)} FROM dbo.fact_Rate_Driver "
-        f"WHERE State_Name = '{state}' AND Year_Month = '{yyyymm}'",
+        f"WHERE {_month_where(state, yyyymm, source)}",
         DB,
     )
 
 
-def fetch_violation(state: str, yyyymm: str) -> pd.DataFrame:
-    _validate(state, yyyymm)
+def fetch_violation(state: str, yyyymm: str, *, source: str | None = None) -> pd.DataFrame:
     return load(
         f"SELECT {_select(VIOL_COLS)} FROM dbo.fact_Rate_Violation "
-        f"WHERE State_Name = '{state}' AND Year_Month = '{yyyymm}'",
+        f"WHERE {_month_where(state, yyyymm, source)}",
         DB,
     )
 
@@ -136,11 +169,12 @@ def _state_in_clause(state: str, months: list[str]) -> str:
     return f"State_Name = '{state}' AND Year_Month IN ({quoted})"
 
 
-def fetch_rate_state(state: str, months: list[str]) -> pd.DataFrame:
+def fetch_rate_state(state: str, months: list[str], *,
+                     cols: list[str] | None = None) -> pd.DataFrame:
     """fact_Rate rows for one state across many months. Returns a single frame
     with a Year_Month column so callers can split it locally."""
     return load(
-        f"SELECT {_select(RATE_COLS)}, Year_Month FROM dbo.fact_Rate "
+        f"SELECT {_select(cols or RATE_COLS)}, Year_Month FROM dbo.fact_Rate "
         f"WHERE {_state_in_clause(state, months)}",
         DB,
     )

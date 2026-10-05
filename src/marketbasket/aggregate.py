@@ -12,7 +12,9 @@ concatenated multi-month DataFrame — doing it per-month produces diverging
 """
 from __future__ import annotations
 
+import os
 import time
+from pathlib import Path
 
 import pandas as pd
 
@@ -196,12 +198,16 @@ def _aggregate_one_state(
         return pd.DataFrame()
 
     # ── Collapse to one row per policy variant ──────────────────────────────
-    # Grain: (PolicyLinkID, CompanyId, HasPhysDmg, HasUM_UIM, HasMedPay, PayPlanType).
+    # Grain: (PolicyLinkID, CompanyId, RateSource, HasPhysDmg, HasUM_UIM,
+    # HasMedPay, PayPlanType).
     # PurchasedFinal = any row in the group had Purchased=1.
     # Pick MIN(TotalPremium) — drops the ~2% unexplained tier residual (NatGen
     # offers multiple base prices for the same coverage; we take the cheaper).
+    # RateSource is part of the key so the 0.67% of policies quoted through two
+    # platforms keep both quotes; collapsing across sources would drop one and
+    # mis-attribute the survivor, making the source filter lie about its volume.
     collapse_key = [
-        "PolicyLinkID", "CompanyId",
+        "PolicyLinkID", "CompanyId", "RateSource",
         "HasPhysDmg", "HasUM_UIM", "HasMedPay", "PayPlanType",
     ]
     df["PurchasedFinal"] = df.groupby(collapse_key)["Purchased"].transform("max")
@@ -263,34 +269,115 @@ def _aggregate_one_state(
     return agg
 
 
+# ─── Checkpointed pulls ──────────────────────────────────────────────────────
+#
+# Every raw pull is written to CHECKPOINT_DIR the moment it lands, so a dropped
+# VPN costs only the query in flight: re-running the same (state, months)
+# reads each pull that already finished instead of paying its full-table scan
+# again. refresh.py deletes a unit's checkpoints once its months are merged.
+# These are raw row-level rows — CHECKPOINT_DIR sits under /cache/, which is
+# gitignored, and must stay that way.
+CHECKPOINT_DIR = Path(__file__).resolve().parent.parent.parent / "cache" / "pull"
+
+# An older checkpoint is re-pulled instead of trusted: the source may have
+# been reloaded since (the missing 202607 TX/TR slice, say).
+CHECKPOINT_MAX_AGE_S = 36 * 3600
+
+
+def checkpoint_key(state: str, months: list[str]) -> str:
+    """Name a pull unit. The month count is part of it so two batches that
+    share endpoints but not contents (a month withheld in between) can't
+    read each other's rows."""
+    if len(months) == 1:
+        return f"{state}_{months[0]}"
+    return f"{state}_{months[0]}-{months[-1]}_n{len(months)}"
+
+
+def clear_checkpoints(key: str) -> None:
+    for p in CHECKPOINT_DIR.glob(f"{key}_*"):
+        p.unlink(missing_ok=True)
+
+
+def _concat_slices(parts: list[pd.DataFrame]) -> pd.DataFrame:
+    """Union per-source slices into the frame one unsplit query would return.
+
+    read_sql infers dtypes per result set, so a slice in which a column is
+    entirely NULL (or that has no rows) types it as object while the other
+    slices have float64 / str / datetime — and concat then widens the whole
+    column to object. Re-inferring just those columns restores what a single
+    query over all the rows would have produced.
+    """
+    if len(parts) == 1:
+        return parts[0]
+    out = pd.concat(parts, ignore_index=True)
+    mixed = [c for c in out.columns if len({str(p[c].dtype) for p in parts}) > 1]
+    if mixed:
+        out[mixed] = out[mixed].infer_objects()
+    return out
+
+
+def _pull(label: str, key: str, fetch, *, sources: list[str | None],
+          checkpoint: bool, verbose: bool) -> pd.DataFrame:
+    """Run `fetch(source=s)` for each source slice, checkpointing each result."""
+    t0 = time.perf_counter()
+    parts: list[pd.DataFrame] = []
+    hits = 0
+    for src in sources:
+        path = CHECKPOINT_DIR / f"{key}_{label}_{src or 'all'}.parquet"
+        fresh = (checkpoint and path.exists()
+                 and time.time() - path.stat().st_mtime < CHECKPOINT_MAX_AGE_S)
+        t1 = time.perf_counter()
+        if fresh:
+            df = pd.read_parquet(path)
+            hits += 1
+        else:
+            df = fetch(source=src)
+            if checkpoint:
+                # Write-then-rename: a kill mid-write must not leave a
+                # truncated file that the next attempt would trust.
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_name(path.name + ".tmp")
+                df.to_parquet(tmp, index=False)
+                os.replace(tmp, path)
+        if verbose and src is not None:
+            how = "checkpoint" if fresh else f"{time.perf_counter()-t1:6.1f}s"
+            print(f"      {src:<5} {len(df):>13,} rows   {how}", flush=True)
+        parts.append(df)
+    df = _concat_slices(parts)
+    if verbose:
+        note = "" if not hits else (
+            "  (checkpoint)" if hits == len(sources) else f"  ({hits}/{len(sources)} from checkpoint)")
+        print(f"    {label:<19} {len(df):>10,} rows   {time.perf_counter()-t0:6.1f}s{note}", flush=True)
+    return df
+
+
 def fetch_and_aggregate(
     state: str, yyyymm: str, *, verbose: bool = True,
+    split_sources: bool = False, checkpoint: bool = False,
 ) -> pd.DataFrame:
-    """Pull 4 tables from SQL for one (state, month) and return the partial aggregate."""
+    """Pull 4 tables from SQL for one (state, month) and return the partial aggregate.
+
+    split_sources pulls each table one Rate_Source slice at a time (see
+    sql.SOURCE_SLICES) — more scans, but shorter queries for states whose
+    single-month pulls run long enough to lose to a VPN drop.
+    """
     if verbose:
         print(f"  {state} {yyyymm}:", flush=True)
 
-    t0 = time.perf_counter()
-    rate = sql.fetch_rate(state, yyyymm)
-    if verbose:
-        print(f"    fact_Rate           {len(rate):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+    key = checkpoint_key(state, [yyyymm])
+    kw = dict(key=key, checkpoint=checkpoint, verbose=verbose,
+              sources=list(sql.SOURCE_SLICES) if split_sources else [None])
+
+    rate = _pull("fact_Rate", fetch=lambda source: sql.fetch_rate(
+        state, yyyymm, cols=sql.RATE_COLS_AGG, source=source), **kw)
     if rate.empty:
         return pd.DataFrame()
-
-    t0 = time.perf_counter()
-    car = sql.fetch_car(state, yyyymm)
-    if verbose:
-        print(f"    fact_Rate_Car       {len(car):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
-
-    t0 = time.perf_counter()
-    drv = sql.fetch_driver(state, yyyymm)
-    if verbose:
-        print(f"    fact_Rate_Driver    {len(drv):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
-
-    t0 = time.perf_counter()
-    viol = sql.fetch_violation(state, yyyymm)
-    if verbose:
-        print(f"    fact_Rate_Violation {len(viol):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+    car = _pull("fact_Rate_Car", fetch=lambda source: sql.fetch_car(
+        state, yyyymm, source=source), **kw)
+    drv = _pull("fact_Rate_Driver", fetch=lambda source: sql.fetch_driver(
+        state, yyyymm, source=source), **kw)
+    viol = _pull("fact_Rate_Violation", fetch=lambda source: sql.fetch_violation(
+        state, yyyymm, source=source), **kw)
 
     t0 = time.perf_counter()
     agg = _aggregate_one_state(state, yyyymm, rate, car, drv, viol)
@@ -301,6 +388,7 @@ def fetch_and_aggregate(
 
 def fetch_and_aggregate_state(
     state: str, months: list[str], *, verbose: bool = True,
+    checkpoint: bool = False,
 ) -> list[pd.DataFrame]:
     """Pull 4 tables ONCE for a state across many months, then aggregate each
     month locally. Each table is one full-table scan instead of N — ~10-15x
@@ -314,25 +402,16 @@ def fetch_and_aggregate_state(
     if verbose:
         print(f"  {state} (batched: {len(months)} months {months[0]}..{months[-1]}):", flush=True)
 
-    t0 = time.perf_counter()
-    rate_all = sql.fetch_rate_state(state, months)
-    if verbose:
-        print(f"    fact_Rate           {len(rate_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
-
-    t0 = time.perf_counter()
-    car_all = sql.fetch_car_state(state, months)
-    if verbose:
-        print(f"    fact_Rate_Car       {len(car_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
-
-    t0 = time.perf_counter()
-    drv_all = sql.fetch_driver_state(state, months)
-    if verbose:
-        print(f"    fact_Rate_Driver    {len(drv_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
-
-    t0 = time.perf_counter()
-    viol_all = sql.fetch_violation_state(state, months)
-    if verbose:
-        print(f"    fact_Rate_Violation {len(viol_all):>10,} rows   {time.perf_counter()-t0:6.1f}s", flush=True)
+    kw = dict(key=checkpoint_key(state, months), checkpoint=checkpoint,
+              verbose=verbose, sources=[None])
+    rate_all = _pull("fact_Rate", fetch=lambda source: sql.fetch_rate_state(
+        state, months, cols=sql.RATE_COLS_AGG), **kw)
+    car_all = _pull("fact_Rate_Car", fetch=lambda source: sql.fetch_car_state(
+        state, months), **kw)
+    drv_all = _pull("fact_Rate_Driver", fetch=lambda source: sql.fetch_driver_state(
+        state, months), **kw)
+    viol_all = _pull("fact_Rate_Violation", fetch=lambda source: sql.fetch_violation_state(
+        state, months), **kw)
 
     # Year_Month came back as a string column. Build per-month indices once.
     for df in (rate_all, car_all, drv_all):

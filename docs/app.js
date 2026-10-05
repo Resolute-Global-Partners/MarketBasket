@@ -42,6 +42,10 @@ const app = {
   // True when the current parquet has Sum<C>Bridging columns. Older parquets
   // don't, and we fall back to a scaling approximation.
   hasExactBridging: false,
+  // True when the current parquet carries the RateSource column. Older
+  // parquets predate it, so the Rate Source filter hides itself rather than
+  // silently filtering on a column that isn't there.
+  hasRateSource: false,
 };
 
 init().catch(err => {
@@ -140,6 +144,7 @@ async function loadState(stateCode) {
   app.currentState = stateCode;
   // Probe the parquet schema once so refreshAll knows which path to take.
   app.hasExactBridging = await detectExactBridging();
+  app.hasRateSource = await detectColumn("RateSource");
   await populateFiltersFromData();
   buildGrid(entry);
   await refreshAll();
@@ -160,6 +165,17 @@ async function detectExactBridging() {
     return COVERAGES.every(c => names.has(`Sum${c}Bridging`));
   } catch (e) {
     console.warn("schema probe failed", e);
+    return false;
+  }
+}
+
+/** True when the loaded parquet has `column`. */
+async function detectColumn(column) {
+  try {
+    const rows = await sqlRows(`PRAGMA table_info('mb')`);
+    return rows.some(r => r.name === column);
+  } catch (e) {
+    console.warn(`schema probe for ${column} failed`, e);
     return false;
   }
 }
@@ -261,7 +277,25 @@ async function populateFiltersFromData() {
   });
   setOptions("county", ["Any", ...counties], "Any");
 
-  document.getElementById("market-provider").value = "ITC";
+  // Rate Source: raw Rate_Source codes straight from the data. They are NOT
+  // relabelled to vendor names — fingerprinting did not establish which code
+  // is ITC and which is EZ Lynx, and a wrong label is worse than a raw one.
+  // Hidden entirely for parquets written before the column existed.
+  const srcRow = document.getElementById("market-provider")?.closest(".control");
+  if (!app.hasRateSource) {
+    if (srcRow) srcRow.style.display = "none";
+  } else {
+    if (srcRow) srcRow.style.display = "";
+    let sources = [];
+    try {
+      const rows = await sqlRows(
+        `SELECT RateSource FROM mb WHERE RateSource IS NOT NULL
+         GROUP BY 1 ORDER BY SUM(Quotes) DESC`
+      );
+      sources = rows.map(r => r.RateSource);
+    } catch (e) { console.warn("rate source query failed", e); }
+    setOptions("market-provider", ["Any", ...sources], "Any");
+  }
 
   await setDefaultRateFilters();
 }
@@ -389,14 +423,11 @@ function whereClause(f) {
   conds.push(`HasUM_UIM   = ${parseInt(f.hasUmUim,   10)}`);
   conds.push(`HasMedPay   = ${parseInt(f.hasMedpay,  10)}`);
 
-  // Market Provider: all currently ingested data is from ITC. EZ Lynx data
-  // hasn't been pulled yet, so filter it out. When Rate_Source is added to
-  // the aggregation pipeline, this block will be replaced with a real column
-  // filter.
-  if (f.marketProvider === "EZ Lynx") {
-    conds.push("1 = 0");   // no EZ Lynx data yet
+  // Rate Source — the rating platform the quote came through. Only applied
+  // when the parquet actually carries the column (older data does not).
+  if (app.hasRateSource && f.marketProvider && f.marketProvider !== "Any") {
+    conds.push(`RateSource = '${f.marketProvider.replace(/'/g, "''")}'`);
   }
-  // "ITC" and "Any" pass through (current data is all ITC)
 
   return "WHERE " + conds.join(" AND ");
 }

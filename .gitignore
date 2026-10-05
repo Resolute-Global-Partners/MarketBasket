@@ -16,3 +16,10 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Ad-hoc diagnostics + rebuild bookkeeping. scripts/_cache holds raw row-level
+# pulls (hundreds of MB) — raw data must never be committed.
+/scripts/_cache/
+/scripts/_tmp/
+/scripts/_rebuild_logs/
+/scripts/_rebuild_ledger.json
