@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-10-02T16:28:59.726135+00:00",
+  "generated_at": "2026-10-08T13:32:51.294003+00:00",
   "source": "sql",
   "states": {
     "AZ": {
       "state": "AZ",
-      "rows": 2956649,
+      "rows": 3150716,
       "months": [
         202508,
         202509,
@@ -18,7 +18,8 @@
         202605,
         202606,
         202607,
-        202608
+        202608,
+        202609
       ],
       "companies": [
         "Alpine",
@@ -80,7 +81,7 @@
     },
     "IL": {
       "state": "IL",
-      "rows": 3904853,
+      "rows": 4096278,
       "months": [
         202501,
         202502,
@@ -101,7 +102,8 @@
         202605,
         202606,
         202607,
-        202608
+        202608,
+        202609
       ],
       "companies": [
         "AmFreedom",
@@ -173,7 +175,7 @@
     },
     "TN": {
       "state": "TN",
-      "rows": 1795598,
+      "rows": 1912605,
       "months": [
         202509,
         202510,
@@ -186,7 +188,8 @@
         202605,
         202606,
         202607,
-        202608
+        202608,
+        202609
       ],
       "companies": [
         "Acceptance",
@@ -284,7 +287,7 @@
     },
     "TX": {
       "state": "TX",
-      "rows": 15810396,
+      "rows": 22052506,
       "months": [
         202509,
         202510,
@@ -295,7 +298,10 @@
         202603,
         202604,
         202605,
-        202606
+        202606,
+        202607,
+        202608,
+        202609
       ],
       "companies": [
         "Acacia",
@@ -327,6 +333,7 @@
         "United Auto"
       ],
       "counties": [
+        "ADA",
         "ADKINS",
         "ALAMEDA",
         "ANDERSON",
@@ -354,6 +361,7 @@
         "BEE",
         "BELL",
         "BELLCOUNTY",
+        "BERGEN",
         "BERKELEY",
         "BERRIEN",
         "BEXAR",
@@ -386,6 +394,7 @@
         "CADDOPARISH",
         "CALCASIEU",
         "CALDWELL",
+        "CALDWELLCOUNTY",
         "CALHOUN",
         "CALLAHAN",
         "CAMERON",
@@ -401,6 +410,7 @@
         "CHEROKEE",
         "CHESTERFIELD",
         "CHILDRESS",
+        "CIBOLA",
         "CLARK",
         "CLAY",
         "CLEVELAND",
@@ -418,6 +428,7 @@
         "CONCHO",
         "CONTRACOSTA",
         "COOK",
+        "COOKCOUNTY",
         "COOKE",
         "CORYELL",
         "CORYELLCOUNTY",
@@ -462,6 +473,7 @@
         "ELPASOCOUNTY",
         "ERATH",
         "ERATHCOUNTY",
+        "ERIE",
         "FAIRFAX",
         "FALLS",
         "FANNIN",
@@ -478,6 +490,7 @@
         "FREESTONE",
         "FRESNO",
         "FRIO",
+        "FULSHEAR",
         "FULTON",
         "GAINES",
         "GALLATIN",
@@ -585,6 +598,7 @@
         "LIBERTY",
         "LIBERTYCOUNTY",
         "LIMESTONE",
+        "LIMESTONECOUNTY",
         "LIPSCOMB",
         "LIVEOAK",
         "LIVINGSTONPARISH",
@@ -597,6 +611,7 @@
         "LUBBOCK",
         "LUBBOCKCOUNTY",
         "LYNN",
+        "MACOMB",
         "MADISON",
         "MADISONCOUNTY",
         "MAGOFFIN",
@@ -619,6 +634,7 @@
         "MCMULLEN",
         "MECKLENBURG",
         "MEDINA",
+        "MEDINACOUNTY",
         "MENARD",
         "MIDDLESEX",
         "MIDLAND",
@@ -627,6 +643,7 @@
         "MILLS",
         "MITCHELL",
         "MONTAGUE",
+        "MONTEREY",
         "MONTGOMERY",
         "MONTGOMERYCOUNTY",
         "MOORE",
@@ -640,8 +657,10 @@
         "NAVARRO",
         "NAVARROCOUNTY",
         "NEWHANOVER",
+        "NEWPORTNEWS",
         "NEWPORTNEWSCITY",
         "NEWTON",
+        "NEWTONCOUNTY",
         "NOLAN",
         "NONE",
         "NORFOLKCITY",
@@ -656,11 +675,13 @@
         "ORLEANSPARISH",
         "OTSEGO",
         "Other",
+        "PALMBEACH",
         "PALOPINTO",
         "PANOLA",
         "PARKER",
         "PARKERCOUNTY",
         "PARMER",
+        "PASCO",
         "PASSAIC",
         "PECOS",
         "PHARR",
@@ -675,6 +696,9 @@
         "POTTER",
         "POTTERCOUNTY",
         "PRESIDIO",
+        "PRINCEGEORGES",
+        "PRINCEWILLIAM",
+        "PUEBLO",
         "RAINS",
         "RANDALL",
         "RANDALLCOUNTY",
@@ -694,6 +718,7 @@
         "RUSK",
         "RUSKCOUNTY",
         "SABINE",
+        "SABINEPARISH",
         "SACRAMENTO",
         "SALTFLAT",
         "SANANTONIO",
@@ -723,6 +748,7 @@
         "SNOHOMISH",
         "SOLANO",
         "SOMERVELL",
+        "SPRINGTOWN",
         "STANISLAUS",
         "STARR",
         "STARRCOUNTY",
@@ -760,6 +786,7 @@
         "VANZANDTCOUNTY",
         "VERMILLION",
         "VICTORIA",
+        "VIRGINIABEACH",
         "VIRGINIABEACHCITY",
         "WAKE",
         "WALKER",
@@ -767,6 +794,7 @@
         "WALLER",
         "WALLERCOUNTY",
         "WARD",
+        "WARREN",
         "WASHINGTON",
         "WASHINGTONCOUNTY",
         "WASHOE",
@@ -789,6 +817,7 @@
         "WILSON",
         "WILSONCOUNTY",
         "WINKLER",
+        "WINKLERCOUNTY",
         "WISE",
         "WISECOUNTY",
         "WOOD",
@@ -838,12 +867,15 @@
         "TX/202603.parquet",
         "TX/202604.parquet",
         "TX/202605.parquet",
-        "TX/202606.parquet"
+        "TX/202606.parquet",
+        "TX/202607.parquet",
+        "TX/202608.parquet",
+        "TX/202609.parquet"
       ]
     },
     "IN": {
       "state": "IN",
-      "rows": 1792317,
+      "rows": 1908428,
       "months": [
         202509,
         202510,
@@ -856,7 +888,8 @@
         202605,
         202606,
         202607,
-        202608
+        202608,
+        202609
       ],
       "companies": [
         "Advantage Auto",
@@ -884,7 +917,6 @@
         "HAMILTON",
         "HANCOCK",
         "HENDRICKS",
-        "HENRY",
         "HOWARD",
         "JOHNSON",
         "KNOX",

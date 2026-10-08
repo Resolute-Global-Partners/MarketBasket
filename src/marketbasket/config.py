@@ -165,14 +165,6 @@ EXCLUDED_MONTHS_BY_STATE: dict[str, set[int]] = {
     # 202405-202412: MarketUnified only ever loaded ~10-12k fact_Rate rows per
     # month for IL (vs ~1.4M from 202501 onward). Real history starts 202501.
     "IL": {202405, 202406, 202407, 202408, 202409, 202410, 202411, 202412},
-    # 202607: reloaded 2026-10-01 but only fact_Rate for TR (10.4M rows);
-    # TR fact_Rate_Car / _Driver / _Violation are absent (API and TFW have
-    # them, and TR has them in 202606), so the rate->car/driver join would
-    # silently drop TR's vehicle/driver detail. DataLineage's fact_Rate-only
-    # count does not catch this.
-    # 202608: the TX/TR fact_Rate slice is missing entirely (14/15 loads).
-    # Drop both until the ETL is re-run.
-    "TX": {202607, 202608},
 }
 
 
